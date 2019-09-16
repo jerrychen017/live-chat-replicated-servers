@@ -1,9 +1,9 @@
 #include "net_include.h"
 #include "sendto_dbg.h"
 
-#define WIN_SIZE 100;
-#define PAC_SIZE 10;
-#define NAME_LENGTH 80;
+#define WIN_SIZE 100
+#define PAC_SIZE 10
+#define NAME_LENGTH 80
 
 int main(int argc, char** argv) {
   struct sockaddr_in name;
@@ -24,33 +24,18 @@ int main(int argc, char** argv) {
   char mess_buf[MAX_MESS_LEN];
   char dest_file_name[NAME_LENGTH] = {'\0'};
 
-  FILE* dest_file;                // pointer to source file
+  FILE* dest_file;                // pointer to destnation file
   char win[WIN_SIZE * PAC_SIZE];  // not sure about it
   char pac[PAC_SIZE];
   struct timeval timeout;
   int num_written;
 
+  sendto_dbg_init(0);
+
   // args error checking
   if (argc != 2) {
     printf("Usage: rcv <loss_rate_percent>");
     exit(0);
-  }
-
-  // extract host name from args
-  char* temp = argv[3];
-  int comp_char_index = 0;
-  bool has_at = false;
-  for (int i = 0; i < strlen(temp); i++) {
-    if ((!has_at) && temp[i] == '@') {
-      has_at = true;
-    } else if (has_at) {
-      comp_name[comp_char_index++] = temp[i];
-    }
-  }
-
-  if (!has_at) {  // prompt error
-    perror("invalid: <dest_file_name>@<comp_name>");
-    exit(1);
   }
 
   // socket for receiving
@@ -94,13 +79,6 @@ int main(int argc, char** argv) {
   FD_ZERO(&excep_mask);
   FD_SET(sr, &mask);
   FD_SET((long)0, &mask); /* stdin */
-
-  if ((source = fopen(argv[2], "r")) == NULL) {
-    perror("fopen");
-    exit(0);
-  }
-
-  printf("Opened %s for reading...\n", argv[2]);
 
   for (;;) {
     read_mask = mask;

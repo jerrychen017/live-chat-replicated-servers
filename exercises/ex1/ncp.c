@@ -1,9 +1,9 @@
 #include "net_include.h"
 #include "sendto_dbg.h"
 
-#define WIN_SIZE 100;
-#define PAC_SIZE 10;
-#define NAME_LENGTH 80;
+#define WIN_SIZE 100
+#define PAC_SIZE 10
+#define NAME_LENGTH 80
 
 int main(int argc, char** argv) {
   struct sockaddr_in name;
@@ -29,6 +29,8 @@ int main(int argc, char** argv) {
   char pac[PAC_SIZE];
   struct timeval timeout;
   int num_read;
+
+  sendto_dbg_init(0);
 
   // args error checking
   if (argc != 4) {
@@ -97,7 +99,7 @@ int main(int argc, char** argv) {
   FD_SET(sr, &mask);
   FD_SET((long)0, &mask); /* stdin */
 
-  if ((source = fopen(argv[2], "r")) == NULL) {
+  if ((source_file = fopen(argv[2], "r")) == NULL) {
     perror("fopen");
     exit(0);
   }
