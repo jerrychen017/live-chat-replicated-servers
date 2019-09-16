@@ -30,8 +30,6 @@ int main(int argc, char** argv) {
   struct timeval timeout;
   int num_written;
 
-  sendto_dbg_init(0);
-
   // args error checking
   if (argc != 2) {
     printf("Usage: rcv <loss_rate_percent>");

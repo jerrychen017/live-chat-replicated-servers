@@ -30,8 +30,6 @@ int main(int argc, char** argv) {
   struct timeval timeout;
   int num_read;
 
-  sendto_dbg_init(0);
-
   // args error checking
   if (argc != 4) {
     printf(
