@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
     socklen_t sockaddr_ncp_len;
 
     struct packet packet_received;
-    struct packet packet_sent;
+    struct packet_ack packet_sent;
 
     struct packet window[WINDOW_SIZE][BUF_SIZE];
     // which sequence the first cell of window corresponds to
@@ -131,12 +131,53 @@ int main(int argc, char** argv) {
                         }
 
                         unsigned int gap = cur;
-                        // write to file and slide the window
+                        // write to file
                         for (cur = start_sequence; cur < gap; cur++) {
                             int bytes_written = fwrite(window[convert(cur, start_sequence, start_index)],
                                     1, BUF_SIZE, fw);
                         }
                         
+                        // put ACK in the return packet
+                        packet_sent.tag = 1;
+                        packet_sent.ack = gap - 1;
+
+                        // determine if there is NACK
+                        // if window is full
+                        if (gap == start_sequence + WINDOW_SIZE) {
+                            packet_sent.nums_nack = 0;
+                        } else {
+                            // find the last received packet in window
+                            for (cur = start_sequence + WINDOW_SIZE - 1; cur >= gap; cur--) {
+                                if (occupied[convert(cur, start_sequence, start_index)]) {
+                                    break;
+                                }
+                            }
+
+                            // if no received packet after gap
+                            unsigned int last_received = cur;
+                            if (last_received == gap - 1) {
+                                packet_sent.nums_nack = 0;
+                            } else {
+                                int counter = 0;
+                                // find gaps in between
+                                for (cur = gap; cur < last_received; cur++) {
+                                    if (!occupied[convert(cur, start_sequence, start_index)]) {
+                                        packet_sent.nack[counter] = cur;
+                                        counter++;
+                                    }
+                                }
+                                packet_sent.nums_nack = counter;
+                            }
+
+                        }
+                        }
+
+
+
+                        // slide window
+                        start_sequence = gap;
+                        start_index = (start_index + gap - start_sequence) % WINDOW_SIZE;
+
 
                         break;
                     }
