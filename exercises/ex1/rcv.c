@@ -2,7 +2,7 @@
 #include "sendto_dbg.h"
 #include "packet.h"
 
-int convert(int index, int start_index);
+unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
 int main(int argc, char** argv) {
     
@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
     int socket_rcv = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_rcv < 0) {
         perror("Rcv: cannot create a socket for receiving");
-        eixt(1);
+        exit(1);
     }
 
     struct sockaddr_in sockaddr_rcv;
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
     sockaddr_rcv.sin_port = htons(PORT);
 
     // bind the socket with rcv address
-    if (bind(socket_rcv, (struct aockaddr*) &sockaddr_rcv, sizeof(sockaddr_rcv)) < 0) {
+    if (bind(socket_rcv, (struct sockaddr*) &sockaddr_rcv, sizeof(sockaddr_rcv)) < 0) {
         perror("Rcv: cannot bind socket with rcv address");
         exit(1);
     }
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
         read_mask = mask;
         idle_interval.tv_sec = 10;
         idle_interval.tv_usec = 0;
-        int num = select(FD_SETSIZE, &read_mask, NULL, NULL, &timeout);
+        int num = select(FD_SETSIZE, &read_mask, NULL, NULL, &idle_interval);
         if (num > 0) {
             if (FD_ISSET(socket_rcv, &read_mask)) {
                 sockaddr_ncp_len = sizeof(sockaddr_ncp);
@@ -113,28 +113,33 @@ int main(int argc, char** argv) {
 
                     // if sender is trasferring
                     case 1:
+                    {
                         unsigned int index = convert(packet_received.sequence, start_sequence, start_index);
                         // put buf in the corresponding spot in window
                         memcpy(window[index], packet_received.file, BUF_SIZE);
                         // mark cell as occupied
                         occupied[index] = true;
                         unsigned int new_start_index = start_index;
-                        
-                        // find the first gap in the window
-                        for (unsigned int i = 0; i < WINDOW_SIZE; i++) {
-                            unsigned int actual_index = convert(i, start_index);
+
+                        // find the first gap in the window                        
+                        unsigned int cur;
+                        for (cur = start_sequence; cur < start_sequence + WINDOW_SIZE; cur++) {
+                            unsigned int actual_index = convert(cur, start_sequence, start_index);
                             if (!occupied[actual_index]) {
-                                new_start_index = i;
                                 break;
                             }
                         }
 
+                        unsigned int gap = cur;
                         // write to file and slide the window
-                        for (int i = )
-                        int bytes_written = fwrite()
+                        for (cur = start_sequence; cur < gap; cur++) {
+                            int bytes_written = fwrite(window[convert(cur, start_sequence, start_index)],
+                                    1, BUF_SIZE, fw);
+                        }
+                        
 
                         break;
-
+                    }
                     // if sender sends the last packet
                     case 2:
                         break;
