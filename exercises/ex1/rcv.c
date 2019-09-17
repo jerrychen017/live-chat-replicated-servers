@@ -59,8 +59,13 @@ int main(int argc, char** argv) {
     struct packet packet_sent;
 
     struct packet window[WINDOW_SIZE][BUF_SIZE];
+    // which sequence the first cell of window corresponds to
     unsigned int start_sequence = 0;
+    // start index of the array
+    unsigned int start_index = 0;
+    // bool array to indicate if cell is filled
     bool occupied[WINDOW_SIZE];
+    FILE *fw;
 
     for (;;) {
         read_mask = mask;
@@ -86,6 +91,14 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
                         } else {
+                            // open or create file for writing
+                            char filename[BUF_SIZE];
+                            memcpy(filename, packet_received.file, packet_received.sequence);
+                            fw = fopen(filename, "w");
+                            if (fw == NULL) {
+                                perror("Rcv: cannot open or create file for writing");
+                                exit(1);
+                            }
                             // send packet to start transfer
                             packet_sent.tag = 0;
                             printf("Establish connection with sender (%d.%d.%d.%d)\n",
@@ -100,9 +113,26 @@ int main(int argc, char** argv) {
 
                     // if sender is trasferring
                     case 1:
+                        unsigned int index = convert(packet_received.sequence, start_sequence, start_index);
                         // put buf in the corresponding spot in window
-                        memcpy(window[packet_received.sequence - start_sequence], packet_received.file, BUF_SIZE);
+                        memcpy(window[index], packet_received.file, BUF_SIZE);
+                        // mark cell as occupied
+                        occupied[index] = true;
+                        unsigned int new_start_index = start_index;
                         
+                        // find the first gap in the window
+                        for (unsigned int i = 0; i < WINDOW_SIZE; i++) {
+                            unsigned int actual_index = convert(i, start_index);
+                            if (!occupied[actual_index]) {
+                                new_start_index = i;
+                                break;
+                            }
+                        }
+
+                        // write to file and slide the window
+                        for (int i = )
+                        int bytes_written = fwrite()
+
                         break;
 
                     // if sender sends the last packet
@@ -123,6 +153,6 @@ int main(int argc, char** argv) {
 }
 
 
-int convert(int index, int start_index) {
-    return (start_index + index) % WINDOW_SIZE;
+unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index) {
+    return (sequence - start_sequence + start_index) % WINDOW_SIZE;
 } 
