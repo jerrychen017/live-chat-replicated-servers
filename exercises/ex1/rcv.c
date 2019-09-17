@@ -2,11 +2,13 @@
 #include "sendto_dbg.h"
 #include "packet.h"
 
+#define NACK_INTERVAL 2
+
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
 int main(int argc, char** argv) {
     
-    // argc erro checking
+    // argc error checking
     if (argc != 3) {
         printf("Usage: rcv <loss_rate_percent>");
         exit(0);
@@ -50,21 +52,36 @@ int main(int argc, char** argv) {
     FD_ZERO(&mask);
     FD_SET(socket_rcv, &mask);
 
+    // wait interval for connection requests
     struct timeval idle_interval;
+    // interval in between sending NACK
+    struct timeval nack_interval;
+    nack_interval.tv_sec = NACK_INTERVAL;
+    nack_interval.tv_usec = 0;
 
     struct sockaddr_in sockaddr_ncp;
     socklen_t sockaddr_ncp_len;
 
+    // packet received from sender
     struct packet packet_received;
+    // packet delivered to sender
     struct packet_ack packet_sent;
 
+    // window to store files
     struct packet window[WINDOW_SIZE][BUF_SIZE];
-    // which sequence the first cell of window corresponds to
+    // sequence which the first cell of window corresponds to
     unsigned int start_sequence = 0;
     // start index of the array
     unsigned int start_index = 0;
     // bool array to indicate if cell is filled
     bool occupied[WINDOW_SIZE];
+    memset(occupied, 0, WINDOW_SIZE * sizeof(bool));
+    // timestamp array for NACK (initialized to zero)
+    struct timeval timestamps[WINDOW_SIZE];
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        timerclear(&timestamps[i]);
+    }
+    // file pointer for writing
     FILE *fw;
 
     for (;;) {
@@ -107,9 +124,12 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
                         }
+                        // TODO: packet_ack convert to char*
                         sendto_dbg(socket_sent, &packet_sent, sizeof(struct packet), 0, 
                                 (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         break;
+
+
 
                     // if sender is trasferring
                     case 1:
@@ -135,6 +155,8 @@ int main(int argc, char** argv) {
                         for (cur = start_sequence; cur < gap; cur++) {
                             int bytes_written = fwrite(window[convert(cur, start_sequence, start_index)],
                                     1, BUF_SIZE, fw);
+                            // clear the timestamp
+                            timerclear(timestamps[convert(cur, start_sequence, start_index)]);
                         }
                         
                         // put ACK in the return packet
@@ -159,30 +181,76 @@ int main(int argc, char** argv) {
                                 packet_sent.nums_nack = 0;
                             } else {
                                 int counter = 0;
+
+                                struct timeval now;
+                                struct timeval interval;
+
                                 // find gaps in between
                                 for (cur = gap; cur < last_received; cur++) {
-                                    if (!occupied[convert(cur, start_sequence, start_index)]) {
-                                        packet_sent.nack[counter] = cur;
-                                        counter++;
+                                    unsigned int actual_index = convert(cur, start_sequence, start_index);
+                                    if (!occupied[actual_index]) {
+                                        // if no timestamp, first NACK, include in packet
+                                        if (!timerisset(timestamps[actual_index])) {
+                                            packet_sent.nack[counter] = cur;
+                                            counter++;
+                                            // record current timestamp
+                                            gettimeofday(&now, NULL);
+                                            memcpy(timestamps[acutal_index], &now, sizeof(struct timeval));
+                                        } else {
+                                            gettimeofday(&now, NULL);
+                                            timersub(&now, timestamps[actual_index], interval);
+                                            // if interval is large, include in NACK
+                                            if (!timercmp(&interval, &nack_interval, <)) {
+                                                packet_sent.nack[counter] = cur;
+                                                counter++;
+                                                // record current timestamp
+                                                gettimeofday(&now, NULL);
+                                                memcpy(timestamps[acutal_index], &now, sizeof(struct timeval));
+                                            }
+                                        }
                                     }
                                 }
                                 packet_sent.nums_nack = counter;
                             }
 
                         }
+                        
+                        // mark written cells as not occupied
+                        for (cur = start_sequence; cur < gap; cur++) {
+                            occupied[convert(cur, start_sequence, start_index)] = false;
                         }
-
-
 
                         // slide window
                         start_sequence = gap;
                         start_index = (start_index + gap - start_sequence) % WINDOW_SIZE;
 
-
+                        // send packet back
+                        // TODO: packet_ack convert to char*
+                        sendto_dbg(socket_sent, &packet_sent, sizeof(struct packet), 0,
+                                (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         break;
                     }
+
+
                     // if sender sends the last packet
+                    // TODO: test if first packet is last packet
                     case 2:
+
+                        // clean up
+                        fclose(fw);
+                        busy = false;
+                        start_sequence = 0;
+                        start_index = 0;
+                        memset(occupied, 0, WINDOW_SIZE * sizeof(bool));
+                        for (int i = 0; i < WINDOW_SIZE; i++) {
+                            timerclear(timestamps[i]);
+                        }
+
+                        printf("Finish trasnferring file with sender (%d.%d.%d.%d)\n",
+                                    (htonl(ncp_ip) & 0xff000000) >> 24,
+                                    (htonl(ncp_ip) & 0x00ff0000) >> 16,
+                                    (htonl(ncp_ip) & 0x0000ff00) >> 8,
+                                    (htonl(ncp_ip) & 0x000000ff));
                         break;
                 }
 
@@ -195,7 +263,7 @@ int main(int argc, char** argv) {
     
     }
 
-
+    return 0;
 }
 
 
