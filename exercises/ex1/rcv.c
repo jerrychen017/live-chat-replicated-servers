@@ -125,13 +125,13 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x000000ff));
                         }
                         // TODO: packet_ack convert to char*
-                        sendto_dbg(socket_sent, &packet_sent, sizeof(struct packet), 0, 
+                        sendto_dbg(socket_sent, (char *)&packet_sent, sizeof(struct packet), 0, 
                                 (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         break;
 
 
 
-                    // if sender is trasferring
+                    // if sender is transferring
                     case 1:
                     {
                         unsigned int index = convert(packet_received.sequence, start_sequence, start_index);
