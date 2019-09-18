@@ -14,10 +14,15 @@ int main(int argc, char** argv) {
   }
 
   char comp_name[NAME_LENGTH] = {'\0'};
-  char dest_file_name[NAME_LENGTH] = {'\0'};
+  struct packet start_packet;
+  start_packet.tag = 0;
+  start_packet.sequence = 0;
+  start_packet.bytes = 0;
+  //   char dest_file_name[NAME_LENGTH] = {'\0'};
 
   int loss_rate_percent = atoi(argv[1]);
-  if ((loss_rate_percent <= 0 && argv[1] != "0") || loss_rate_percent > 100) {
+  if ((loss_rate_percent <= 0 && strcmp(argv[1], "0") != 0) ||
+      loss_rate_percent > 100) {
     perror("ncp: loss_rate_percent should be within range [0, 100]");
     exit(1);
   }
@@ -30,7 +35,8 @@ int main(int argc, char** argv) {
   bool has_at = false;
   for (int i = 0; i < strlen(temp); i++) {
     if ((!has_at) && temp[i] != '@') {
-      dest_file_name[i] = temp[i];
+      start_packet.file[i] = temp[i];
+      start_packet.bytes += sizeof(char);
     } else if ((!has_at) && temp[i] == '@') {
       has_at = true;
     } else if (has_at) {
@@ -57,10 +63,7 @@ int main(int argc, char** argv) {
   int bytes;
   int num;
   char my_name[NAME_LENGTH] = {'\0'};
-  // char mess_buf[MAX_MESS_LEN];
-
   struct timeval timeout;
-  int num_read;
 
   // socket for receiving messages
   sr = socket(AF_INET, SOCK_STREAM, 0);
@@ -112,23 +115,18 @@ int main(int argc, char** argv) {
 
   printf("Opened %s for reading...\n", argv[2]);
 
-  struct packet_ack mess_ack_nack;
+  struct packet_mess mess_pac;
   struct packet win[WINDOW_SIZE];
-  int cur_index;
-  char buffer[BUF_SIZE];
+  int curr_ind_zero = 0;
+  int curr_ind;  // the index which is one over the index the sender sended up
+                 // to
+  char buffer[BUF_SIZE];  // to store a chunk of file
   bool begin = false;
-
+  bool finished = false;
+  // indicating if the file chunk read is the last packet
+  bool last_packet = false;
+  int last_sequence = -1;
   struct packet temp_pac;
-  // initialize window
-  for (int i = 0; i < WINDOW_SIZE; i++) {
-    temp_pac.tag = 1;
-    num_read = fread(buffer, 1, BUF_SIZE, source_file);
-    temp_pac.sequence = i;
-    for (int j = 0; j < BUF_SIZE; j++) {  // copy arr
-      temp_pac.file[j] = buffer[j];
-    }
-    win[i] = temp_pac;
-  }
 
   for (;;) {
     read_mask = mask;
@@ -139,21 +137,44 @@ int main(int argc, char** argv) {
       // receiving message
       if (FD_ISSET(sr, &read_mask)) {
         from_len = sizeof(from_addr);
-        bytes = recvfrom(sr, &mess_ack_nack, sizeof(mess_ack_nack), 0,
+        bytes = recvfrom(sr, &mess_pac, sizeof(struct packet_mess), 0,
                          (struct sockaddr*)&from_addr, &from_len);
         // mess_buf[bytes] = 0;
 
         from_ip = from_addr.sin_addr.s_addr;
-        printf("Received Ack and Nack message from (%d.%d.%d.%d): %s\n",
+        printf("Received Ack and Nack message from (%d.%d.%d.%d): ack is %d\n",
                (htonl(from_ip) & 0xff000000) >> 24,
                (htonl(from_ip) & 0x00ff0000) >> 16,
                (htonl(from_ip) & 0x0000ff00) >> 8,
-               (htonl(from_ip) & 0x000000ff), mess_ack_nack);
+               (htonl(from_ip) & 0x000000ff), mess_pac.ack);
 
-        switch (mess_ack_nack.tag) {
+        switch (mess_pac.tag) {
           // receiver is not busy, we can get started
           case 0:
             begin = true;
+            // initialize window
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+              temp_pac.tag = 1;
+              temp_pac.bytes = fread(buffer, 1, BUF_SIZE, source_file);
+              temp_pac.sequence = i;
+              for (int j = 0; j < BUF_SIZE; j++) {  // copy arr
+                temp_pac.file[j] = buffer[j];
+              }
+              win[i] = temp_pac;
+              if (temp_pac.bytes < BUF_SIZE) {
+                /* Did we reach the EOF? */
+                if (feof(source_file)) {
+                  printf("Finished reading.\n");
+                  temp_pac.tag = 2;
+                  last_packet = true;
+                  last_sequence = i;
+                  break;
+                } else {
+                  printf("An error occurred...\n");
+                  exit(0);
+                }
+              }
+            }
             sendto_dbg(ss, (char*)&win[0], sizeof(struct packet), 0,
                        (struct sockaddr*)&send_addr, sizeof(send_addr));
             curr_ind = 1;
@@ -161,60 +182,86 @@ int main(int argc, char** argv) {
           // in the process of transferring packets.
           // receives ack and nack
           case 1:
-            unsigned char ack = mess_ack_nack.ack;
-            unsigned char nums_nack = mess_ack_nack.nums_nack;
-            unsigned int nack[WINDOW_SIZE] = mess_ack_nack.nack;
-
-            // slide window if ack is greater than first sequence
-            int first_sequence = win[0].sequence;
-            int last_sequence = win[WINDOW_SIZE].sequence;
-            int offset = ack - first_sequence;
             // meaning that ack is different than before
+            if (mess_pac.ack == last_sequence) {
+              finished = true;
+              temp_pac.tag = 3;
+              sendto_dbg(ss, (char*)&temp_pac, sizeof(struct packet), 0,
+                         (struct sockaddr*)&send_addr, sizeof(send_addr));
+              break;
+            }
+            unsigned int nums_nack = mess_pac.nums_nack;
+            int first_sequence = win[curr_ind_zero].sequence;
+            int offset = mess_pac.ack - first_sequence;
+
             if (offset >= 0) {
-              // copy the packets we need to keep to the front of the arr
-              for (int i = 0; i < offset + 1; i++) {
-                win[i] = win[i + offset + 1];
-              }
-              for (int j = last_sequence - offset; j < WINDOW_SIZE; j++) {
-                temp_pac.tag = 1;
-                num_read = fread(buffer, 1, BUF_SIZE, source_file);
-                if (num_read < BUF_SIZE) {
-                  if (feof(source_file)) {
-                    printf("Finished reading.\n");
-                    break;
+              if (!last_packet) {  // slide window if not last packet
+                for (int i = 0; i < offset + 1; i++) {
+                  temp_pac.tag = 1;
+                  temp_pac.bytes = fread(buffer, 1, BUF_SIZE, source_file);
+                  temp_pac.sequence = offset + +1;
+                  if (temp_pac.bytes < BUF_SIZE) {
+                    if (feof(source_file)) {
+                      printf("Finished reading.\n");
+                      last_packet = true;
+                      last_sequence = temp_pac.sequence;
+                      temp_pac.tag = 2;
+                      break;
+                    } else {
+                      printf("An error occurred when finishing reading\n");
+                      exit(0);
+                    }
+                  }
+                  if (curr_ind_zero == WINDOW_SIZE - 1) {
+                    curr_ind_zero = 0;
                   } else {
-                    printf("An error occurred when finishing reading\n");
-                    exit(0);
+                    curr_ind_zero++;
                   }
                 }
-                temp_pac.sequence = offset + j + 1;
-                for (int k = 0; k < BUF_SIZE; k++) {  // copy arr
-                  temp_pac.file[k] = buffer[k];
-                }
-                win[j] = temp_pac;
               }
-              // first element of nack is 0 indicating nack is empty??
-              if (nack[0] == 0) {  // nack is empty
-                sendto_dbg(ss, (char*)&win[curr_ind], sizeof(struct packet), 0,
-                           (struct sockaddr*)&send_addr, sizeof(send_addr));
-                curr_ind++;
-              } else {
-                for (int i = 0; i < sizeof(nack) / sizeof(nack[0]); i++) {
-                  if (nack[i] != 0) {
-                    sendto_dbg(ss, (char*)&win[nack[i] - first_sequence],
-                               sizeof(struct packet), 0,
-                               (struct sockaddr*)&send_addr, sizeof(send_addr));
+
+              if (nums_nack == 0) {  // nack is empty
+                if (last_packet) {   // sending last packet
+                  int last_ind = last_sequence - win[curr_ind_zero].sequence +
+                                 curr_ind_zero;
+                  if (last_ind >= WINDOW_SIZE) {
+                    last_ind -= WINDOW_SIZE;
                   }
+                  sendto_dbg(ss, (char*)&win[last_ind], sizeof(struct packet),
+                             0, (struct sockaddr*)&send_addr,
+                             sizeof(send_addr));
+                } else {
+                  sendto_dbg(ss, (char*)&win[curr_ind], sizeof(struct packet),
+                             0, (struct sockaddr*)&send_addr,
+                             sizeof(send_addr));
+                }
+                if (curr_ind == WINDOW_SIZE - 1) {
+                  curr_ind = 0;
+                } else {
+                  curr_ind++;
+                }
+              } else {  // send all nack items
+                for (int i = 0; i < nums_nack; i++) {
+                  int nack_ind = mess_pac.nack[i] -
+                                 win[curr_ind_zero].sequence + curr_ind_zero;
+                  if (nack_ind >= WINDOW_SIZE) {
+                    nack_ind -= WINDOW_SIZE;
+                  }
+                  sendto_dbg(ss, (char*)&win[nack_ind], sizeof(struct packet),
+                             0, (struct sockaddr*)&send_addr,
+                             sizeof(send_addr));
                 }
               }
             } else if (offset == -1 &&
-                       nack[0] != 0) {  // ack didn't change and there's nack
-              for (int i = 0; i < sizeof(nack) / sizeof(nack[0]); i++) {
-                if (nack[i] != 0) {
-                  sendto_dbg(ss, (char*)&win[nack[i] - first_sequence],
-                             sizeof(struct packet), 0,
-                             (struct sockaddr*)&send_addr, sizeof(send_addr));
+                       nums_nack != 0) {  // ack didn't change and there's nack
+              for (int i = 0; i < nums_nack; i++) {
+                int nack_ind = mess_pac.nack[i] - win[curr_ind_zero].sequence +
+                               curr_ind_zero;
+                if (nack_ind >= WINDOW_SIZE) {
+                  nack_ind -= WINDOW_SIZE;
                 }
+                sendto_dbg(ss, (char*)&win[nack_ind], sizeof(struct packet), 0,
+                           (struct sockaddr*)&send_addr, sizeof(send_addr));
               }
             } else {  // error otherwise
               perror("ncp: ack error");
@@ -226,33 +273,52 @@ int main(int argc, char** argv) {
           case 2:
             sleep(10);  // sleep for 10 seconds and then come back
             break;
+          case 3:  // receiver respond finished
+            exit(0);
+            break;
           default:
             perror("ncp: packet_ack tag error");
             exit(1);
         }
-
-      } else if (FD_ISSET(0, &read_mask)) {
-        num_read = fread(pac, 1, BUF_SIZE, source_file);
-
-        if (num_read > 0) {  // if read something
-          printf("There is an packet: %s\n", pac);
-          sendto_dbg(ss, pac, strlen(pac), 0, (struct sockaddr*)&send_addr,
-                     sizeof(send_addr));
-        }
-
-        if (num_read < BUF_SIZE) {
-          /* Did we reach the EOF? */
-          if (feof(source_file)) {
-            printf("Finished writing.\n");
-            break;
-          } else {
-            printf("An error occurred...\n");
-            exit(0);
-          }
-        }
       }
-    } else {
-      printf(".");
+      //   } else if (FD_ISSET(0, &read_mask)) {
+
+      //     if (num_read > 0) {  // if read something
+      //       printf("There is an packet: %s\n", pac);
+      //       sendto_dbg(ss, pac, strlen(pac), 0, (struct sockaddr*)&send_addr,
+      //                  sizeof(send_addr));
+      //     }
+
+      //     if (num_read < BUF_SIZE) {
+      //       /* Did we reach the EOF? */
+      //       if (feof(source_file)) {
+      //         printf("Finished writing.\n");
+      //         break;
+      //       } else {
+      //         printf("An error occurred...\n");
+      //         exit(0);
+      //       }
+      //     }
+      //   }
+    } else {  // when timeout
+      printf("timeout! \n");
+      if (!begin) {
+        sendto_dbg(ss, (char*)&start_packet, sizeof(struct packet), 0,
+                   (struct sockaddr*)&send_addr, sizeof(send_addr));
+      }
+      if (finished) {
+        temp_pac.tag = 3;
+        sendto_dbg(ss, (char*)&temp_pac, sizeof(struct packet), 0,
+                   (struct sockaddr*)&send_addr, sizeof(send_addr));
+      } else {
+        int last_ind =
+            last_sequence - win[curr_ind_zero].sequence + curr_ind_zero;
+        if (last_ind >= WINDOW_SIZE) {
+          last_ind -= WINDOW_SIZE;
+        }
+        sendto_dbg(ss, (char*)&win[last_ind], sizeof(struct packet), 0,
+                   (struct sockaddr*)&send_addr, sizeof(send_addr));
+      }
       fflush(0);
     }
   }
