@@ -12,15 +12,15 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigne
 int main(int argc, char** argv) {
     
     // argc error checking
-    if (argc != 3) {
+    if (argc != 2) {
         printf("Usage: rcv <loss_rate_percent>\n");
         exit(0);
     }
 
-    int loss_rate_percent = atoi(argv[2]);
+    int loss_rate_percent = atoi(argv[1]);
 
     // if 2nd command is not valid number
-    if (loss_rate_percent == 0 && strcmp(argv[2], "0") != 0) {
+    if (loss_rate_percent == 0 && strcmp(argv[1], "0") != 0) {
         perror("Error: second command should be an integer in [0, 100]\n");
         exit(0);
     }

@@ -16,6 +16,6 @@
 
 #include <sys/time.h>
 
-#define PORT 10030
+#define PORT 10100
 
 #define MAX_MESS_LEN 1400

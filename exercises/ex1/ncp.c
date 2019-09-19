@@ -55,12 +55,8 @@ int main(int argc, char* argv[]) {
   }
 
   struct sockaddr_in name;
-  struct sockaddr_in send_addr;
   struct sockaddr_in from_addr;
   socklen_t from_len;
-  struct hostent h_ent;
-  struct hostent* p_h_ent;
-  int host_num;
   int from_ip;
   int ss, sr;
   fd_set mask;
@@ -71,7 +67,7 @@ int main(int argc, char* argv[]) {
   struct timeval timeout;
 
   // socket for receiving messages
-  sr = socket(AF_INET, SOCK_STREAM, 0);
+  sr = socket(AF_INET, SOCK_DGRAM, 0);
   if (sr < 0) {
     perror("ncp: socket");
     exit(1);
@@ -91,20 +87,6 @@ int main(int argc, char* argv[]) {
     perror("ncp: socket");
     exit(1);
   }
-
-  gethostname(my_name, NAME_LENGTH);  // gets my name
-  p_h_ent = gethostbyname(comp_name);
-  if (p_h_ent == NULL) {
-    printf("ncp: gethostbyname error.\n");
-    exit(1);
-  }
-
-  memcpy(&h_ent, p_h_ent, sizeof(h_ent));
-  memcpy(&host_num, h_ent.h_addr_list[0], sizeof(host_num));
-
-  send_addr.sin_family = AF_INET;
-  send_addr.sin_addr.s_addr = host_num;
-  send_addr.sin_port = htons(PORT);
 
   FD_ZERO(&mask);
   // FD_ZERO(&write_mask);
@@ -131,6 +113,10 @@ int main(int argc, char* argv[]) {
   bool last_packet = false;
   int last_sequence = -1;
   struct packet temp_pac;
+
+  // send filename to rcv
+  sendto_dbg(ss, (char*)&start_packet, sizeof(struct packet), 0, 
+          (struct sockaddr*)&from_addr, sizeof(from_addr));
 
   for (;;) {
     read_mask = mask;
@@ -176,7 +162,7 @@ int main(int argc, char* argv[]) {
               }
               win[i] = temp_pac;
               sendto_dbg(ss, (char*)&temp_pac, sizeof(struct packet), 0,
-                         (struct sockaddr*)&send_addr, sizeof(send_addr));
+                         (struct sockaddr*)&from_addr, sizeof(from_addr));
               curr_ind = i;
             }
             break;
@@ -186,7 +172,7 @@ int main(int argc, char* argv[]) {
             // rcv didn't get the very first packet
             if (mess_pac.ack == UINT_MAX) {
               sendto_dbg(ss, (char*)&win[curr_ind_zero], sizeof(struct packet),
-                         0, (struct sockaddr*)&send_addr, sizeof(send_addr));
+                         0, (struct sockaddr*)&from_addr, sizeof(from_addr));
               break;
             }
             unsigned int nums_nack = mess_pac.nums_nack;
@@ -217,7 +203,7 @@ int main(int argc, char* argv[]) {
               win[curr_ind_zero] = temp_pac;
               curr_ind_zero = (curr_ind_zero + 1) % WINDOW_SIZE;
               sendto_dbg(ss, (char*)&temp_pac, sizeof(struct packet), 0,
-                         (struct sockaddr*)&send_addr, sizeof(send_addr));
+                         (struct sockaddr*)&from_addr, sizeof(from_addr));
               curr_ind = (curr_ind + 1) % WINDOW_SIZE;
             }
             if (nums_nack > 0) {
@@ -226,7 +212,7 @@ int main(int argc, char* argv[]) {
                                 curr_ind_zero) %
                                WINDOW_SIZE;
                 sendto_dbg(ss, (char*)&win[nack_ind], sizeof(struct packet), 0,
-                           (struct sockaddr*)&send_addr, sizeof(send_addr));
+                           (struct sockaddr*)&from_addr, sizeof(from_addr));
               }
             }
             break;
@@ -243,18 +229,18 @@ int main(int argc, char* argv[]) {
 
         if (!begin) {
           sendto_dbg(ss, (char*)&start_packet, sizeof(struct packet), 0,
-                     (struct sockaddr*)&send_addr, sizeof(send_addr));
+                     (struct sockaddr*)&from_addr, sizeof(from_addr));
         }
       }
     } else {  // when timeout
       printf("timeout! \n");
       if (!begin) {
         sendto_dbg(ss, (char*)&start_packet, sizeof(struct packet), 0,
-                   (struct sockaddr*)&send_addr, sizeof(send_addr));
+                   (struct sockaddr*)&from_addr, sizeof(from_addr));
 
       } else {
         sendto_dbg(ss, (char*)&win[curr_ind], sizeof(struct packet), 0,
-                   (struct sockaddr*)&send_addr, sizeof(send_addr));
+                   (struct sockaddr*)&from_addr, sizeof(from_addr));
       }
       //   fflush(0);
     }
