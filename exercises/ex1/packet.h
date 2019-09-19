@@ -3,19 +3,21 @@
 
 #define WINDOW_SIZE 16
 #define PACKET_SIZE 100
-#define BUF_SIZE PACKET_SIZE - sizeof(unsigned char) - sizeof(unsigned int)
+#define BUF_SIZE PACKET_SIZE - 3 * sizeof(unsigned int)
+#define NACK_SIZE 20
 
 struct packet {
-    unsigned char tag;
-    unsigned int sequence;
-    char file[BUF_SIZE];
+  unsigned int tag;
+  unsigned int sequence;
+  unsigned int bytes;
+  char file[BUF_SIZE];
 };
 
-struct packet_ack {
-    unsigned char tag;
-    unsigned char ack;
-    unsigned char nums_nack;
-    unsigned int nack[WINDOW_SIZE];
+struct packet_mess {
+  unsigned int tag;
+  unsigned int ack;        // representing sequence
+  unsigned int nums_nack;  // number of nacks
+  unsigned int nack[NACK_SIZE];
 };
 
 #endif

@@ -1,6 +1,6 @@
 #include "net_include.h"
-#include "sendto_dbg.h"
 #include "packet.h"
+#include "sendto_dbg.h"
 
 #define NACK_INTERVAL 2
 
@@ -23,8 +23,8 @@ int main(int argc, char** argv) {
     }
 
     if (loss_rate_percent < 0 || loss_rate_percent > 100) {
-        printf("Warning: loss_rate_percent should be within range [0, 100]\n"
-                + "         if < 0, set to 0; if > 100, set to 100\n");
+        printf("Warning: loss_rate_percent should be within range [0, 100]\n");
+        printf("         if < 0, set to 0; if > 100, set to 100\n");
     }
 
     sendto_dbg_init(loss_rate_percent);
@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
     sockaddr_rcv.sin_port = htons(PORT);
 
     // bind the socket with rcv address
-    if (bind(socket_rcv, (struct sockaddr*) &sockaddr_rcv, sizeof(sockaddr_rcv)) < 0) {
+    if (bind(socket_rcv, (struct sockaddr*)&sockaddr_rcv, sizeof(sockaddr_rcv)) < 0) {
         perror("Rcv: cannot bind socket with rcv address");
         exit(1);
     }
@@ -265,20 +265,17 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x000000ff));
                         break;
                 }
-
-
             }
         } else {
             printf(".");
             fflush(0);
+            
         }
-    
     }
-
     return 0;
 }
 
-
-unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index) {
-    return (sequence - start_sequence + start_index) % WINDOW_SIZE;
-} 
+unsigned int convert(unsigned int sequence, unsigned int start_sequence,
+                     unsigned int start_index) {
+  return (sequence - start_sequence + start_index) % WINDOW_SIZE;
+}
