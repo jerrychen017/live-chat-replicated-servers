@@ -3,7 +3,7 @@
 
 #define WINDOW_SIZE 16
 #define PACKET_SIZE 100
-#define BUF_SIZE PACKET_SIZE - 2 * sizeof(unsigned int)
+#define BUF_SIZE PACKET_SIZE - 3 * sizeof(unsigned int)
 #define NACK_SIZE 20
 
 struct packet {
