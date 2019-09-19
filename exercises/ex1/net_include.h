@@ -14,6 +14,8 @@
 
 #include <errno.h>
 
+#include <sys/time.h>
+
 #define PORT 10030
 
 #define MAX_MESS_LEN 1400

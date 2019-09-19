@@ -25,7 +25,7 @@ sendto_dbg.o: sendto_dbg.c sendto_dbg.h
 ncp.o: ncp.c sendto_dbg.h
 	    $(CC) $(CFLAGS) ncp.c
 
-rcv.o: rcv.c sendto_dbg.h
+rcv.o: rcv.c sendto_dbg.h packet.h net_include.h
 		$(CC) $(CFLAGS) rcv.c
 
 clean:
@@ -34,5 +34,6 @@ clean:
 	rm rcv
 	rm test
 
-%.o:    %.c
-	$(CC) $(CFLAGS) $*.c
+# COMMENT OUT FOR NOW
+#%.o:    %.c
+#	$(CC) $(CFLAGS) $*.c
