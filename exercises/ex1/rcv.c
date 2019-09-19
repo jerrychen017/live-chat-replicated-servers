@@ -10,13 +10,21 @@ int main(int argc, char** argv) {
     
     // argc error checking
     if (argc != 3) {
-        printf("Usage: rcv <loss_rate_percent>");
+        printf("Usage: rcv <loss_rate_percent>\n");
         exit(0);
     }
 
     int loss_rate_percent = atoi(argv[2]);
+
+    // if 2nd command is not valid number
+    if (loss_rate_percent == 0 && strcmp(argv[2], "0") != 0) {
+        perror("Error: second command should be an integer in [0, 100]\n");
+        exit(0);
+    }
+
     if (loss_rate_percent < 0 || loss_rate_percent > 100) {
-        printf("Warning: loss_rate_percent should be within range [0, 100]");
+        printf("Warning: loss_rate_percent should be within range [0, 100]\n"
+                + "         if < 0, set to 0; if > 100, set to 100\n");
     }
 
     sendto_dbg_init(loss_rate_percent);
@@ -41,6 +49,7 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
+    // create a socket for sending packet_mess
     int socket_sent = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_sent < 0) {
         perror("Rcv: cannot create a socket for sending");
@@ -73,14 +82,17 @@ int main(int argc, char** argv) {
     unsigned int start_sequence = 0;
     // start index of the array
     unsigned int start_index = 0;
+
     // bool array to indicate if cell is filled
     bool occupied[WINDOW_SIZE];
     memset(occupied, 0, WINDOW_SIZE * sizeof(bool));
+    
     // timestamp array for NACK (initialized to zero)
     struct timeval timestamps[WINDOW_SIZE];
     for (int i = 0; i < WINDOW_SIZE; i++) {
         timerclear(&timestamps[i]);
     }
+    
     // file pointer for writing
     FILE *fw;
 
