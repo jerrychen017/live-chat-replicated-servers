@@ -96,6 +96,8 @@ int main(int argc, char** argv) {
 
     // sequence of last packet
     unsigned int last_sequence = UINT_MAX;
+    // valid bytes in last packet
+    unsigned int last_packet_bytes = 0;
 
     for (;;) {
         read_mask = mask;
@@ -178,6 +180,7 @@ int main(int argc, char** argv) {
                     {
                         // record the last sequence
                         last_sequence = packet_received.sequence;
+                        last_packet_bytes = packet_received.bytes;
                     }
 
                     // if sender is transferring
@@ -208,11 +211,21 @@ int main(int argc, char** argv) {
                         
                         // write to file
                         for (cur = start_sequence; cur < gap; cur++) {
-                            int bytes_written = fwrite(window[convert(cur, start_sequence, start_index)],
-                                    1, BUF_SIZE, fw);
-                            // error checking on bytes written
-                            if (bytes_written != BUF_SIZE) {
-                                printf("Warning: write to file less than BUF_SIZE bytes\n");
+                            // TODO: Check if last packet, then write specific bytes to file
+                            if (last_sequence != UINT_MAX && cur == last_sequence) {
+                                int bytes_written = fwrite(window[convert(cur,
+                                            start_sequence, start_index)], 1, last_packet_bytes, fw);
+                                // error checking on bytes written
+                                if (bytes_written != last_packet_bytes) {
+                                    printf("Warning: write LAST packet to file is not %d bytes\n", last_packet_bytes);
+                                }
+                            } else {
+                                int bytes_written = fwrite(window[convert(cur,
+                                            start_sequence, start_index)], 1, BUF_SIZE, fw);
+                                // error checking on bytes written
+                                if (bytes_written != BUF_SIZE) {
+                                    printf("Warning: write to file less than %lu bytes\n", BUF_SIZE);
+                                }
                             }
                             // clear the timestamp
                             timerclear(&timestamps[convert(cur, start_sequence, start_index)]);
