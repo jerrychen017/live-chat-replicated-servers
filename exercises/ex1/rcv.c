@@ -1,11 +1,9 @@
-#include <limits.h>
 #include "net_include.h"
 #include "packet.h"
 #include "sendto_dbg.h"
+#include "tag.h"
 
 #define NACK_INTERVAL 2
-
-// TODO: define tags in the header
 
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
@@ -122,7 +120,7 @@ int main(int argc, char** argv) {
                 // if sender is NOT current client, assume it's previous client
                 if (busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0) {
                     // send special finish tag
-                    packet_sent.tag = 3;
+                    packet_sent.tag = RCV_END;
                     sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet), 0,
                             (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                     continue;
@@ -132,11 +130,11 @@ int main(int argc, char** argv) {
                 switch (packet_received.tag) {
 
                     // if sender wants to start transferring
-                    case 0:
+                    case NCP_FILENAME:
                     {
                         if (busy) {
                             // send packet to notify busy
-                            packet_sent.tag = 2;
+                            packet_sent.tag = RCV_BUSY;
                             printf("Sender (%d.%d.%d.%d) wants to connect, but busy\n",
                                     (htonl(ncp_ip) & 0xff000000) >> 24,
                                     (htonl(ncp_ip) & 0x00ff0000) >> 16,
@@ -157,7 +155,7 @@ int main(int argc, char** argv) {
                             memcpy(&sockaddr_client, &sockaddr_ncp, sockaddr_ncp_len);
 
                             // send packet to start transfer
-                            packet_sent.tag = 0;
+                            packet_sent.tag = RCV_START;
                             printf("Establish connection with sender (%d.%d.%d.%d)\n",
                                     (htonl(ncp_ip) & 0xff000000) >> 24,
                                     (htonl(ncp_ip) & 0x00ff0000) >> 16,
@@ -171,15 +169,16 @@ int main(int argc, char** argv) {
 
 
                     // if receive LAST packet
-                    case 2:
+                    case NCP_LAST:
                     {
                         // record the last sequence
                         last_sequence = packet_received.sequence;
                     }
 
                     // if sender is transferring
-                    case 1:
+                    case NCP_FILE:
                     {
+                        printf("Received a packet with file\n");
                         unsigned int index = convert(packet_received.sequence, start_sequence, start_index);
                         // put buf in the corresponding spot in window
                         
@@ -215,7 +214,7 @@ int main(int argc, char** argv) {
                         }
                         
                         // put ACK in the return packet
-                        packet_sent.tag = 1;
+                        packet_sent.tag = RCP_ACK;
 
                         // if the first packet is lost, use MAX UNSIGNED INT as ack 
                         if (gap == 0) {
@@ -298,7 +297,7 @@ int main(int argc, char** argv) {
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         } else {
                             // send special finish tag
-                            packet_sent.tag = 3;
+                            packet_sent.tag = RCV_END;
                             sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
 

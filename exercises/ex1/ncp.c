@@ -1,6 +1,8 @@
 #include "net_include.h"
 #include "packet.h"
 #include "sendto_dbg.h"
+#include "tag.h"
+
 #define NAME_LENGTH 80
 
 // DISCUSS: error checking each ugrad?
@@ -27,7 +29,7 @@ int main(int argc, char* argv[]) {
   // extract computer name and destination file name from args
   char comp_name[8] = {'\0'};  // ugrad machines name
   struct packet start_packet;
-  start_packet.tag = 0;
+  start_packet.tag = NCP_FILENAME;
   start_packet.sequence = 0;
   start_packet.bytes = 0;
   char* temp = argv[3];
@@ -54,13 +56,16 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
+  // address of ncp
   struct sockaddr_in name;
+  // address of rcv
   struct sockaddr_in from_addr;
   socklen_t from_len;
+
   int from_ip;
   int ss, sr;
   fd_set mask;
-  fd_set read_mask;  //, write_mask, excep_mask;
+  fd_set read_mask;
   int bytes;
   int num;
   char my_name[NAME_LENGTH] = {'\0'};
@@ -88,9 +93,22 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
+  struct hostent *rcv_name;
+  struct hostent rcv_name_copy;
+  int rcv_fd;
+  rcv_name = gethostbyname(comp_name);
+  if (rcv_name == NULL) {
+    perror("ncp: invalid receiver name\n");
+    exit(1);
+  }
+  memcpy(&rcv_name_copy, rcv_name, sizeof(rcv_name_copy));
+  memcpy(&rcv_fd, rcv_name_copy.h_addr_list[0], sizeof(rcv_fd));
+
+  from_addr.sin_family = AF_INET;
+  from_addr.sin_addr.s_addr = rcv_fd; 
+  from_addr.sin_port = htons(PORT);
+
   FD_ZERO(&mask);
-  // FD_ZERO(&write_mask);
-  // FD_ZERO(&excep_mask);
   FD_SET(sr, &mask);
   FD_SET((long)0, &mask); /* stdin */
 
@@ -138,7 +156,7 @@ int main(int argc, char* argv[]) {
 
         switch (mess_pac.tag) {
           // receiver is not busy, we can get started
-          case 0:
+          case RCV_START:
             begin = true;
             // initialize window and send each packet after each read
             for (int i = 0; i < WINDOW_SIZE; i++) {
@@ -146,13 +164,13 @@ int main(int argc, char* argv[]) {
                                   // read
                 break;
               }
-              temp_pac.tag = 1;
+              temp_pac.tag = NCP_FILE;
               temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
               temp_pac.sequence = i;
               if (temp_pac.bytes < BUF_SIZE) {
                 if (feof(source_file)) {  // when we reach the EOF
                   printf("Finished reading.\n");
-                  temp_pac.tag = 2;
+                  temp_pac.tag = NCP_LAST;
                   last_packet = true;
                   last_sequence = i;
                 } else {
@@ -168,7 +186,7 @@ int main(int argc, char* argv[]) {
             break;
           // in the process of transferring packets.
           // receives ack and nack
-          case 1:
+          case RCV_ACK:
             // rcv didn't get the very first packet
             if (mess_pac.ack == UINT_MAX) {
               sendto_dbg(ss, (char*)&win[curr_ind_zero], sizeof(struct packet),
@@ -186,7 +204,7 @@ int main(int argc, char* argv[]) {
                                   // read
                 break;
               }
-              temp_pac.tag = 1;
+              temp_pac.tag = NCP_FILE;
               temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
               temp_pac.sequence = win[curr_ind].sequence + 1;
               if (temp_pac.bytes < BUF_SIZE) {
@@ -194,7 +212,7 @@ int main(int argc, char* argv[]) {
                   printf("Finished reading.\n");
                   last_packet = true;
                   last_sequence = temp_pac.sequence;
-                  temp_pac.tag = 2;
+                  temp_pac.tag = NCP_LAST;
                 } else {
                   printf("An error occurred when finishing reading\n");
                   exit(0);
@@ -217,10 +235,10 @@ int main(int argc, char* argv[]) {
             }
             break;
           // receiver is busy
-          case 2:
+          case RCV_BUSY:
             sleep(10);  // sleep for 10 seconds and then come back
             break;
-          case 3:  // receiver respond finished
+          case RCV_END:  // receiver respond finished
             printf("File Transfer Completed!\n");
             fclose(source_file);
             exit(0);
