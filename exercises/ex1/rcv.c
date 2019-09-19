@@ -32,9 +32,9 @@ int main(int argc, char** argv) {
 
     bool busy = false;
 
-    // create a socket for receiving packets
-    int socket_rcv = socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_rcv < 0) {
+    // create a socket both for sending and receiving
+    int sk = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sk < 0) {
         perror("Rcv: cannot create a socket for receiving");
         exit(1);
     }
@@ -44,23 +44,16 @@ int main(int argc, char** argv) {
     sockaddr_rcv.sin_addr.s_addr = INADDR_ANY;
     sockaddr_rcv.sin_port = htons(PORT);
 
-    // bind the socket with rcv address
-    if (bind(socket_rcv, (struct sockaddr*)&sockaddr_rcv, sizeof(sockaddr_rcv)) < 0) {
+    // bind the socket with PORT
+    if (bind(sk, (struct sockaddr*)&sockaddr_rcv, sizeof(sockaddr_rcv)) < 0) {
         perror("Rcv: cannot bind socket with rcv address");
-        exit(1);
-    }
-
-    // create a socket for sending packet_mess
-    int socket_sent = socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_sent < 0) {
-        perror("Rcv: cannot create a socket for sending");
         exit(1);
     }
 
     fd_set read_mask;
     fd_set mask;
     FD_ZERO(&mask);
-    FD_SET(socket_rcv, &mask);
+    FD_SET(sk, &mask);
 
     // wait interval for connection requests
     struct timeval idle_interval;
@@ -110,10 +103,10 @@ int main(int argc, char** argv) {
         idle_interval.tv_usec = 0;
         int num = select(FD_SETSIZE, &read_mask, NULL, NULL, &idle_interval);
         if (num > 0) {
-            if (FD_ISSET(socket_rcv, &read_mask)) {
+            if (FD_ISSET(sk, &read_mask)) {
                 sockaddr_ncp_len = sizeof(sockaddr_ncp);
                 // receive packet form ncp and store its address
-                recvfrom(socket_rcv, &packet_received, sizeof(struct packet), 0,
+                recvfrom(sk, &packet_received, sizeof(struct packet), 0,
                         (struct sockaddr*) &sockaddr_ncp, &sockaddr_ncp_len);
                 int ncp_ip = sockaddr_ncp.sin_addr.s_addr;
                 
@@ -121,7 +114,7 @@ int main(int argc, char** argv) {
                 if (busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0) {
                     // send special finish tag
                     packet_sent.tag = RCV_END;
-                    sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet_mess), 0,
+                    sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                             (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                     
                     printf("Sender (%d.%d.%d.%d) is not current client, respond with RCV_END packet\n",
@@ -169,14 +162,13 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
                         }
-                        sendto_dbg(socket_sent, (char *)&packet_sent, sizeof(struct packet_mess), 0, 
+                        sendto_dbg(sk, (char *)&packet_sent, sizeof(struct packet_mess), 0, 
                                 (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         printf("Sending packet to sender (%d.%d.%d.%d)\n",
                                     (htonl(sockaddr_ncp.sin_addr.s_addr) & 0xff000000) >> 24,
                                     (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x00ff0000) >> 16,
                                     (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x0000ff00) >> 8,
                                     (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x000000ff));
-                        
                         break;
                     }
 
@@ -306,12 +298,12 @@ int main(int argc, char** argv) {
 
                         // if haven't received last packet
                         if (last_sequence == UINT_MAX || start_sequence != last_sequence + 1) {
-                            sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet_mess), 0,
+                            sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         } else {
                             // send special finish tag
                             packet_sent.tag = RCV_END;
-                            sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet_mess), 0,
+                            sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
 
                             // clean up
