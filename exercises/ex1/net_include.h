@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 
+#include <limits.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <string.h>
