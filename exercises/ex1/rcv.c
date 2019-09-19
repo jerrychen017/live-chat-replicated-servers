@@ -214,7 +214,7 @@ int main(int argc, char** argv) {
                         }
                         
                         // put ACK in the return packet
-                        packet_sent.tag = RCP_ACK;
+                        packet_sent.tag = RCV_ACK;
 
                         // if the first packet is lost, use MAX UNSIGNED INT as ack 
                         if (gap == 0) {
