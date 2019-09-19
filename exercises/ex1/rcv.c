@@ -5,6 +5,8 @@
 
 #define NACK_INTERVAL 2
 
+// TODO: define tags in the header
+
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
 int main(int argc, char** argv) {
@@ -69,8 +71,12 @@ int main(int argc, char** argv) {
     nack_interval.tv_sec = NACK_INTERVAL;
     nack_interval.tv_usec = 0;
 
+    // socket address of received packet
     struct sockaddr_in sockaddr_ncp;
     socklen_t sockaddr_ncp_len;
+
+    // socket address of current client
+    struct sockaddr_in sockaddr_client;
 
     // packet received from sender
     struct packet packet_received;
@@ -109,10 +115,20 @@ int main(int argc, char** argv) {
             if (FD_ISSET(socket_rcv, &read_mask)) {
                 sockaddr_ncp_len = sizeof(sockaddr_ncp);
                 // receive packet form ncp and store its address
-                int bytes = recvfrom(socket_rcv, &packet_received, sizeof(struct packet), 0,
+                recvfrom(socket_rcv, &packet_received, sizeof(struct packet), 0,
                         (struct sockaddr*) &sockaddr_ncp, &sockaddr_ncp_len);
                 int ncp_ip = sockaddr_ncp.sin_addr.s_addr;
                 
+                // if sender is NOT current client, assume it's previous client
+                if (busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0) {
+                    // send special finish tag
+                    packet_sent.tag = 3;
+                    sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet), 0,
+                            (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
+                    continue;
+                }
+
+
                 switch (packet_received.tag) {
 
                     // if sender wants to start transferring
@@ -136,6 +152,10 @@ int main(int argc, char** argv) {
                                 perror("Rcv: cannot open or create file for writing");
                                 exit(1);
                             }
+
+                            // store the client address
+                            memcpy(&sockaddr_client, &sockaddr_ncp, sockaddr_ncp_len);
+
                             // send packet to start transfer
                             packet_sent.tag = 0;
                             printf("Establish connection with sender (%d.%d.%d.%d)\n",
@@ -144,7 +164,6 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
                         }
-                        // TODO: packet_ack convert to char*
                         sendto_dbg(socket_sent, (char *)&packet_sent, sizeof(struct packet), 0, 
                                 (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         break;
@@ -172,7 +191,6 @@ int main(int argc, char** argv) {
                         memcpy(window[index], packet_received.file, packet_received.bytes);
                         // mark cell as occupied
                         occupied[index] = true;
-                        unsigned int new_start_index = start_index;
 
                         // find the first gap in the window                        
                         unsigned int cur;
@@ -193,7 +211,7 @@ int main(int argc, char** argv) {
                                 printf("Warning: write to file less than BUF_SIZE bytes\n");
                             }
                             // clear the timestamp
-                            timerclear(timestamps[convert(cur, start_sequence, start_index)]);
+                            timerclear(&timestamps[convert(cur, start_sequence, start_index)]);
                         }
                         
                         // put ACK in the return packet
@@ -233,23 +251,28 @@ int main(int argc, char** argv) {
                                     index = convert(cur, start_sequence, start_index);
                                     if (!occupied[index]) {
                                         // if no timestamp, first NACK, include in packet
-                                        if (!timerisset(timestamps[index])) {
+                                        if (!timerisset(&timestamps[index])) {
                                             packet_sent.nack[counter] = cur;
                                             counter++;
                                             // record current timestamp
                                             gettimeofday(&now, NULL);
-                                            memcpy(timestamps[index], &now, sizeof(struct timeval));
+                                            memcpy(&timestamps[index], &now, sizeof(struct timeval));
                                         } else {
                                             gettimeofday(&now, NULL);
-                                            timersub(&now, timestamps[index], interval);
+                                            timersub(&now, &timestamps[index], &interval);
                                             // if interval is large, include in NACK
-                                            if (!timercmp(&interval, &nack_interval, '<')) {
+                                            if (!timercmp(&interval, &nack_interval, <)) {
                                                 packet_sent.nack[counter] = cur;
                                                 counter++;
                                                 // record current timestamp
                                                 gettimeofday(&now, NULL);
-                                                memcpy(timestamps[index], &now, sizeof(struct timeval));
+                                                memcpy(&timestamps[index], &now, sizeof(struct timeval));
                                             }
+                                        }
+
+                                        // if number of nack exceeds the limit
+                                        if (counter >= NACK_SIZE) {
+                                            break;
                                         }
                                     }
                                 }
@@ -271,12 +294,12 @@ int main(int argc, char** argv) {
 
                         // if haven't received last packet
                         if (last_sequence == UINT_MAX || start_sequence != last_sequence + 1) {
-                            sendto_dbg(socket_sent, &packet_sent, sizeof(struct packet), 0,
+                            sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         } else {
                             // send special finish tag
-                            socket_sent.tag = 3;
-                            sendto_dbg(socket_sent, &packet_sent, sizeof(struct packet), 0,
+                            packet_sent.tag = 3;
+                            sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
 
                             // clean up
@@ -286,7 +309,7 @@ int main(int argc, char** argv) {
                             start_index = 0;
                             memset(occupied, 0, WINDOW_SIZE * sizeof(bool));
                             for (int i = 0; i < WINDOW_SIZE; i++) {
-                                timerclear(timestamps[i]);
+                                timerclear(&timestamps[i]);
                             }
 
                             printf("Finish trasnferring file with sender (%d.%d.%d.%d)\n",
