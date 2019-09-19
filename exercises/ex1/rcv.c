@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
 
     // if 2nd command is not valid number
     if (loss_rate_percent == 0 && strcmp(argv[1], "0") != 0) {
-        perror("Error: second command should be an integer in [0, 100]\n");
+        printf("Error: second command should be an integer in [0, 100]\n");
         exit(0);
     }
 
@@ -121,8 +121,15 @@ int main(int argc, char** argv) {
                 if (busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0) {
                     // send special finish tag
                     packet_sent.tag = RCV_END;
-                    sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet), 0,
+                    sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                             (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
+                    
+                    printf("Sender (%d.%d.%d.%d) is not current client, respond with RCV_END packet\n",
+                            (htonl(ncp_ip) & 0xff000000) >> 24,
+                            (htonl(ncp_ip) & 0x00ff0000) >> 16,
+                            (htonl(ncp_ip) & 0x0000ff00) >> 8,
+                            (htonl(ncp_ip) & 0x000000ff));
+
                     continue;
                 }
 
@@ -162,8 +169,14 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
                         }
-                        sendto_dbg(socket_sent, (char *)&packet_sent, sizeof(struct packet), 0, 
+                        sendto_dbg(socket_sent, (char *)&packet_sent, sizeof(struct packet_mess), 0, 
                                 (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
+                        printf("Sending packet to sender (%d.%d.%d.%d)\n",
+                                    (htonl(sockaddr_ncp.sin_addr.s_addr) & 0xff000000) >> 24,
+                                    (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x00ff0000) >> 16,
+                                    (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x0000ff00) >> 8,
+                                    (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x000000ff));
+                        
                         break;
                     }
 
@@ -293,12 +306,12 @@ int main(int argc, char** argv) {
 
                         // if haven't received last packet
                         if (last_sequence == UINT_MAX || start_sequence != last_sequence + 1) {
-                            sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet), 0,
+                            sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         } else {
                             // send special finish tag
                             packet_sent.tag = RCV_END;
-                            sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet), 0,
+                            sendto_dbg(socket_sent, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
 
                             // clean up
