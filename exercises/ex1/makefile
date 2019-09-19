@@ -13,6 +13,12 @@ ncp: ncp.o
 rcv: rcv.o
 	    $(CC) -o rcv rcv.o sendto_dbg.o
 
+fake_ncp: fake_ncp.o
+	    $(CC) -o fake_ncp fake_ncp.o sendto_dbg.o
+
+fake_rcv: fake_rcv.o
+	    $(CC) -o fake_rcv fake_rcv.o sendto_dbg.o
+
 sendto_dbg.o: sendto_dbg.c sendto_dbg.h
 	    $(CC) $(CFLAGS) sendto_dbg.c 
 
