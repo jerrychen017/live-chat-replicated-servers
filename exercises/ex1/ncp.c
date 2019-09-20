@@ -122,6 +122,7 @@ int main(int argc, char* argv[]) {
   bool begin = false;
   // indicating if the file chunk read is the last packet
   bool last_packet = false;
+  int last_ind = 0; 
   struct packet temp_pac;
 
   // send filename to rcv
@@ -178,7 +179,7 @@ int main(int argc, char* argv[]) {
                   printf("Finished reading.\n");
                   temp_pac.tag = NCP_LAST;
                   last_packet = true;
-
+                  last_ind = curr_ind; 
                 } else {
                   printf("An error occurred when finished reading...\n");
                   exit(0);
@@ -213,12 +214,14 @@ int main(int argc, char* argv[]) {
               }
               temp_pac.tag = NCP_FILE;
               temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
+              
               temp_pac.sequence = win[curr_ind].sequence + 1;
               if (temp_pac.bytes < BUF_SIZE) {
                 if (feof(source_file)) {
                   printf("Finished reading.\n");
                   last_packet = true;
                   temp_pac.tag = NCP_LAST;
+                  last_ind = curr_ind; 
                 } else {
                   printf("An error occurred when finishing reading\n");
                   exit(0);
@@ -227,6 +230,8 @@ int main(int argc, char* argv[]) {
               sent_bytes += win[curr_ind].bytes;
               win[curr_ind_zero] = temp_pac;
               curr_ind_zero = (curr_ind_zero + 1) % WINDOW_SIZE;
+              
+              //printf("send packet bytes %d with sequence %d\n", temp_pac.bytes, temp_pac.sequence);
               sendto_dbg(sk, (char*)&temp_pac, sizeof(struct packet), 0,
                          (struct sockaddr*)&send_addr, sizeof(send_addr));
               curr_ind = (curr_ind + 1) % WINDOW_SIZE;
@@ -261,7 +266,8 @@ int main(int argc, char* argv[]) {
             finish_total_t = clock();
             // TODO: report size of file, average rate at which communication
             // occurred.
-            total_sent_bytes += win[curr_ind].bytes;
+            total_sent_bytes += win[last_ind].bytes+sent_bytes;
+            printf("Total file size is %d bytes\n", total_sent_bytes);
             printf("Total file size is %.2f Mbytes\n",
                    (double)total_sent_bytes / 1000000);
             double time =

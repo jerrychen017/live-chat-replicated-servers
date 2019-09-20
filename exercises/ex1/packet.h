@@ -3,10 +3,10 @@
 
 #define MAX_PACKET_SIZE 1400
 #define WINDOW_SIZE 16
-#define PACKET_SIZE 500
+#define PACKET_SIZE 700
 #define BUF_SIZE PACKET_SIZE - 3 * sizeof(unsigned int)
 #define MAX_NUMS_NACK (PACKET_SIZE - 3 * sizeof(unsigned int)) / sizeof(unsigned int)
-#define NACK_SIZE MAX_NUMS_NACK
+#define NACK_SIZE 20
 
 struct packet {
   unsigned int tag;
