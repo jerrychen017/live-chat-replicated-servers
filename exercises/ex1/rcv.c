@@ -123,12 +123,6 @@ int main(int argc, char** argv) {
                         (struct sockaddr*) &sockaddr_ncp, &sockaddr_ncp_len);
                 int ncp_ip = sockaddr_ncp.sin_addr.s_addr;
                 
-                // if sender is not busy, and sender does NOT send filename
-                if (!busy && packet_received.tag != NCP_FILENAME) {
-
-                }
-
-
                 // if sender is busy, and sender is NOT current client
                 if ((busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0)
                         // if sender is not busy, and sender does NOT send filename
