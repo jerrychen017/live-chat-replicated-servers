@@ -104,8 +104,6 @@ int main(int argc, char** argv) {
     // clock when receive last 100 Mbytes
     clock_t last_clock;
     
-    int counter = 0;
-
     for (;;) {
         read_mask = mask;
         idle_interval.tv_sec = 10;
@@ -192,9 +190,7 @@ int main(int argc, char** argv) {
                     {
                         // record the last sequence
                         last_sequence = packet_received.sequence;
-                        //printf("last sequence is %d\n", last_sequence);
                         last_packet_bytes = packet_received.bytes;
-                        //printf("last packet bytes is %d \n", last_packet_bytes);
                     }
 
                     // if sender is transferring
@@ -223,23 +219,19 @@ int main(int argc, char** argv) {
                             if (last_sequence != UINT_MAX && cur == last_sequence) {
                                 int bytes_written = fwrite(window[convert(cur,
                                             start_sequence, start_index)], 1, last_packet_bytes, fw);
-                                //printf("#%d: LAST bytes_written = %d written to sequence %d\n", counter, bytes_written, cur);
                                 // error checking on bytes written
                                 if (bytes_written != last_packet_bytes) {
-                                    printf("Warning: write LAST packet to file is not %d bytes\n", last_packet_bytes);
                                 }
                                 bytes += bytes_written;
                             } else {
                                 int bytes_written = fwrite(window[convert(cur,
                                             start_sequence, start_index)], 1, BUF_SIZE, fw);
-                                //printf("#%d: bytes_written = %d written to sequence %d \n", counter, bytes_written, cur);
                                 // error checking on bytes written
                                 if (bytes_written != BUF_SIZE) {
                                     printf("Warning: write to file less than %lu bytes\n", BUF_SIZE);
                                 }
                                 bytes += bytes_written;
                             }
-                            counter++;
                             // clear the timestamp
                             timerclear(&timestamps[convert(cur, start_sequence, start_index)]);
 
