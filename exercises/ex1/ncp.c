@@ -3,10 +3,8 @@
 #include "sendto_dbg.h"
 #include "tag.h"
 
-#define NAME_LENGTH 80
-
 // DISCUSS: error checking each ugrad?
-
+// TODO when total_sent_bytes reaches 3 gigabytes, we change unit
 int main(int argc, char* argv[]) {
   // args error checking
   if (argc != 4) {
@@ -232,6 +230,17 @@ int main(int argc, char* argv[]) {
               sendto_dbg(sk, (char*)&temp_pac, sizeof(struct packet), 0,
                          (struct sockaddr*)&send_addr, sizeof(send_addr));
               curr_ind = (curr_ind + 1) % WINDOW_SIZE;
+              // report sent bytes
+              if (sent_bytes >= 100000000) {
+                  total_sent_bytes += sent_bytes;
+                  sent_end_t = clock();
+                   printf("%.2fMbytes sent with an average transfer rate %.2fMbits/sec!\n",
+                  (double)sent_bytes / 1000000,
+                 (double)(sent_bytes / 125000) /
+                 ((double)(sent_end_t - sent_start_t) / CLOCKS_PER_SEC));
+      sent_bytes = 0;
+      sent_start_t = clock();
+    }
             }
             if (nums_nack > 0) {
               for (int i = 0; i < nums_nack; i++) {
@@ -282,17 +291,6 @@ int main(int argc, char* argv[]) {
                    (struct sockaddr*)&send_addr, sizeof(send_addr));
       }
       //   fflush(0);
-    }
-
-    if (sent_bytes >= 100000000) {
-      total_sent_bytes += sent_bytes;
-      sent_end_t = clock();
-      printf("%.2fMbytes sent with an average transfer rate %.2fMbits/sec!\n",
-             (double)sent_bytes / 1000000,
-             (double)(sent_bytes / 125000) /
-                 ((double)(sent_end_t - sent_start_t) / CLOCKS_PER_SEC));
-      sent_bytes = 0;
-      sent_start_t = clock();
     }
 
   }  // ending for loop
