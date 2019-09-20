@@ -7,6 +7,8 @@
 
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
+void add(unsigned int* megabytes, unsigned int* bytes, int bytes_written);
+
 int main(int argc, char** argv) {
     
     // argc error checking
@@ -99,6 +101,15 @@ int main(int argc, char** argv) {
     // valid bytes in last packet
     unsigned int last_packet_bytes = 0;
 
+    // number of megabytes written
+    unsigned int megabytes = 0;
+    // number of bytes written
+    unsigned int bytes = 0;
+    // clock when receive the first packet
+    clock_t start_clock;
+    // clock when receive last 100 Mbytes
+    clock_t last_clock;
+
     for (;;) {
         read_mask = mask;
         idle_interval.tv_sec = 10;
@@ -137,7 +148,7 @@ int main(int argc, char** argv) {
                         if (busy) {
                             // send packet to notify busy
                             packet_sent.tag = RCV_BUSY;
-                            printf("Sender (%d.%d.%d.%d) wants to connect, but busy\n",
+                            printf("Notice: Sender (%d.%d.%d.%d) wants to connect, but busy\n",
                                     (htonl(ncp_ip) & 0xff000000) >> 24,
                                     (htonl(ncp_ip) & 0x00ff0000) >> 16,
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
@@ -158,22 +169,23 @@ int main(int argc, char** argv) {
 
                             // send packet to start transfer
                             packet_sent.tag = RCV_START;
+                            printf("\n");
+                            printf("----------------START-----------------\n");
                             printf("Establish connection with sender (%d.%d.%d.%d)\n",
                                     (htonl(ncp_ip) & 0xff000000) >> 24,
                                     (htonl(ncp_ip) & 0x00ff0000) >> 16,
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
+                            printf("Start transferring file %s\n", filename);
                         }
                         sendto_dbg(sk, (char *)&packet_sent, sizeof(struct packet_mess), 0, 
                                 (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
-                        printf("Sending packet to sender (%d.%d.%d.%d)\n",
-                                    (htonl(sockaddr_ncp.sin_addr.s_addr) & 0xff000000) >> 24,
-                                    (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x00ff0000) >> 16,
-                                    (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x0000ff00) >> 8,
-                                    (htonl(sockaddr_ncp.sin_addr.s_addr) & 0x000000ff));
+                        
+                        // start clock to record time for transfer
+                        start_clock = clock();
+                        last_clock = clock();
                         break;
                     }
-
 
                     // if receive LAST packet
                     case NCP_LAST:
@@ -186,16 +198,9 @@ int main(int argc, char** argv) {
                     // if sender is transferring
                     case NCP_FILE:
                     {
-                        printf("Received a packet with file\n");
                         unsigned int index = convert(packet_received.sequence, start_sequence, start_index);
-                        // put buf in the corresponding spot in window
-                        
-                        // error check on file size
-                        if (packet_received.bytes != BUF_SIZE) {
-                            printf("Warning: packet contains less than BUF_SIZE bytes\n");
-                        }
-                        
                         memcpy(window[index], packet_received.file, packet_received.bytes);
+                        
                         // mark cell as occupied
                         occupied[index] = true;
 
@@ -211,7 +216,8 @@ int main(int argc, char** argv) {
                         
                         // write to file
                         for (cur = start_sequence; cur < gap; cur++) {
-                            // TODO: Check if last packet, then write specific bytes to file
+                            unsigned int old_megabytes = megabytes;
+                            // if writing the last packet to file
                             if (last_sequence != UINT_MAX && cur == last_sequence) {
                                 int bytes_written = fwrite(window[convert(cur,
                                             start_sequence, start_index)], 1, last_packet_bytes, fw);
@@ -219,6 +225,7 @@ int main(int argc, char** argv) {
                                 if (bytes_written != last_packet_bytes) {
                                     printf("Warning: write LAST packet to file is not %d bytes\n", last_packet_bytes);
                                 }
+                                add(&megabytes, &bytes, bytes_written);
                             } else {
                                 int bytes_written = fwrite(window[convert(cur,
                                             start_sequence, start_index)], 1, BUF_SIZE, fw);
@@ -226,9 +233,18 @@ int main(int argc, char** argv) {
                                 if (bytes_written != BUF_SIZE) {
                                     printf("Warning: write to file less than %lu bytes\n", BUF_SIZE);
                                 }
+                                add(&megabytes, &bytes, bytes_written);
                             }
                             // clear the timestamp
                             timerclear(&timestamps[convert(cur, start_sequence, start_index)]);
+
+                            // report statistics every 100 MBytes
+                            if (old_megabytes % 100 != megabytes % 100) {
+                                double seconds = (double) (clock() - last_clock) / CLOCKS_PER_SEC;
+                                printf("Report: total amount of data transferred is %u Mbytes\n", megabytes);
+                                printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) 800 / seconds);
+                                last_clock = clock();
+                            }
                         }
                         
                         // put ACK in the return packet
@@ -319,6 +335,19 @@ int main(int argc, char** argv) {
                             sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
 
+                            printf("Finish trasnferring file with sender (%d.%d.%d.%d)\n",
+                                    (htonl(ncp_ip) & 0xff000000) >> 24,
+                                    (htonl(ncp_ip) & 0x00ff0000) >> 16,
+                                    (htonl(ncp_ip) & 0x0000ff00) >> 8,
+                                    (htonl(ncp_ip) & 0x000000ff));
+
+                            double seconds = (double) (clock() - start_clock) / CLOCKS_PER_SEC;
+                            printf("Report: Size of file transferred is %.2f Mbytes\n", megabytes + (double) bytes / 1000000);
+                            printf("        Amount of time spent is %.2f seconds\n", seconds);
+                            printf("        Average rate is %.2f Mbits/sec\n",
+                                    (megabytes + (double) bytes / 1000000) * 8 / seconds);
+                            printf("-----------------END------------------\n");
+
                             // clean up
                             fclose(fw);
                             busy = false;
@@ -328,12 +357,9 @@ int main(int argc, char** argv) {
                             for (int i = 0; i < WINDOW_SIZE; i++) {
                                 timerclear(&timestamps[i]);
                             }
-
-                            printf("Finish trasnferring file with sender (%d.%d.%d.%d)\n",
-                                    (htonl(ncp_ip) & 0xff000000) >> 24,
-                                    (htonl(ncp_ip) & 0x00ff0000) >> 16,
-                                    (htonl(ncp_ip) & 0x0000ff00) >> 8,
-                                    (htonl(ncp_ip) & 0x000000ff));
+                            last_sequence = UINT_MAX;
+                            megabytes = 0;
+                            bytes = 0;
                         }
 
                         break;
@@ -353,3 +379,9 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence,
                      unsigned int start_index) {
   return (sequence - start_sequence + start_index) % WINDOW_SIZE;
 }
+
+void add(unsigned int* megabytes, unsigned int* bytes, int bytes_written) {
+    *megabytes += bytes_written / 1000000;
+    *bytes += bytes_written - bytes_written / 1000000 * 1000000;
+}
+
