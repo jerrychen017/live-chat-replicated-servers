@@ -126,10 +126,11 @@ int main(int argc, char** argv) {
                 // if sender is busy, and sender is NOT current client
                 if ((busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0)
                         // if sender is not busy, and sender does NOT send filename
-                        || (!busy && packet_received.tag != NCP_FILENAME)) {
+                        || (!busy && packet_received.tag != NCP_FILENAME)){
                     
                     // assume sender is previous client
                     // send special finish tag
+          
                     packet_sent.tag = RCV_END;
                     sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                             (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
@@ -167,6 +168,8 @@ int main(int argc, char** argv) {
                                 perror("Rcv: cannot open or create file for writing");
                                 exit(1);
                             }
+
+                            busy = true;
 
                             // store the client address
                             memcpy(&sockaddr_client, &sockaddr_ncp, sockaddr_ncp_len);
