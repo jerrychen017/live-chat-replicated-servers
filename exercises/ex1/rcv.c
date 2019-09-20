@@ -119,14 +119,11 @@ int main(int argc, char** argv) {
                         (struct sockaddr*) &sockaddr_ncp, &sockaddr_ncp_len);
                 int ncp_ip = sockaddr_ncp.sin_addr.s_addr;
                 
-                // if sender is busy, and sender is NOT current client
-                if ((busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0)
-                        // if sender is not busy, and sender does NOT send filename
-                        || (!busy && packet_received.tag != NCP_FILENAME)){
-                    
+                // if not NCP_FILENAME, and sender is NOT current client
+                if (packet_received.tag != NCP_FILENAME
+                        && !(busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) == 0)){
                     // assume sender is previous client
                     // send special finish tag
-          
                     packet_sent.tag = RCV_END;
                     sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                             (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
@@ -146,8 +143,8 @@ int main(int argc, char** argv) {
                     // if sender wants to start transferring
                     case NCP_FILENAME:
                     {
-                        if (busy) {
-                            // send packet to notify busy
+                        // if it is NOT current client, send packet to notify busy
+                        if (busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0) {
                             packet_sent.tag = RCV_BUSY;
                             printf("Notice: Sender (%d.%d.%d.%d) wants to connect, but busy\n",
                                     (htonl(ncp_ip) & 0xff000000) >> 24,
@@ -195,9 +192,9 @@ int main(int argc, char** argv) {
                     {
                         // record the last sequence
                         last_sequence = packet_received.sequence;
-                        printf("last sequence is %d\n", last_sequence);
+                        //printf("last sequence is %d\n", last_sequence);
                         last_packet_bytes = packet_received.bytes;
-                        printf("last packet bytes is %d \n", last_packet_bytes);
+                        //printf("last packet bytes is %d \n", last_packet_bytes);
                     }
 
                     // if sender is transferring
@@ -226,7 +223,7 @@ int main(int argc, char** argv) {
                             if (last_sequence != UINT_MAX && cur == last_sequence) {
                                 int bytes_written = fwrite(window[convert(cur,
                                             start_sequence, start_index)], 1, last_packet_bytes, fw);
-                                printf("#%d: LAST bytes_written = %d written to sequence %d\n", counter, bytes_written, cur);
+                                //printf("#%d: LAST bytes_written = %d written to sequence %d\n", counter, bytes_written, cur);
                                 // error checking on bytes written
                                 if (bytes_written != last_packet_bytes) {
                                     printf("Warning: write LAST packet to file is not %d bytes\n", last_packet_bytes);
@@ -235,7 +232,7 @@ int main(int argc, char** argv) {
                             } else {
                                 int bytes_written = fwrite(window[convert(cur,
                                             start_sequence, start_index)], 1, BUF_SIZE, fw);
-                                printf("#%d: bytes_written = %d written to sequence %d \n", counter, bytes_written, cur);
+                                //printf("#%d: bytes_written = %d written to sequence %d \n", counter, bytes_written, cur);
                                 // error checking on bytes written
                                 if (bytes_written != BUF_SIZE) {
                                     printf("Warning: write to file less than %lu bytes\n", BUF_SIZE);
@@ -249,8 +246,8 @@ int main(int argc, char** argv) {
                             // report statistics every 100 MBytes
                             if (old_bytes / 100000000 != bytes / 100000000) {
                                 double seconds = (double) (clock() - last_clock) / CLOCKS_PER_SEC;
-                                printf("Report: total amount of data transferred is %u Mbytes\n", bytes / 1000000);
-                                printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) (bytes - old_bytes) / 125000 / seconds);
+                                printf("Report: total amount of data transferred is %u Mbytes\n", bytes / (1024 * 1024));
+                                printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) (100) * 8 / seconds);
                                 last_clock = clock();
                             }
                         }
@@ -350,10 +347,11 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x000000ff));
 
                             double seconds = (double) (clock() - start_clock) / CLOCKS_PER_SEC;
-                            printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / 1000000);
+                            printf("Report: Size of file transferred is %d bytes\n", bytes);
+                            printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / (1024 * 1024));
                             printf("        Amount of time spent is %.2f seconds\n", seconds);
                             printf("        Average rate is %.2f Mbits/sec\n",
-                                    (double) bytes / 125000 / seconds);
+                                    (double) bytes / (1024 * 1024) * 8 / seconds);
                             printf("-----------------END------------------\n");
 
                             // clean up
