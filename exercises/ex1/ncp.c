@@ -10,8 +10,7 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigne
 int main(int argc, char* argv[]) {
     // args error checking
     if (argc != 4) {
-        printf(
-                "ncp usage: ncp <loss_rate_percent> <source_file_name> "
+        printf("ncp usage: ncp <loss_rate_percent> <source_file_name> "
                 "<dest_file_name>@<comp_name>");
         exit(0);
     }
@@ -19,8 +18,7 @@ int main(int argc, char* argv[]) {
     int loss_rate_percent = atoi(argv[1]);
     // loss rate error checking
     if (loss_rate_percent == 0 && strcmp(argv[1], "0") != 0) {
-        perror(
-                "ncp invalid command: loss_rate_percent should be within range [0, "
+        perror("ncp invalid command: loss_rate_percent should be within range [0, "
                 "100]\n");
         exit(1);
     }
@@ -57,8 +55,7 @@ int main(int argc, char* argv[]) {
         }
     }
     if (!has_at) {  // prompt error when there's no '@' in the argument
-        perror(
-                "ncp invalid command: incorrect format in "
+        perror("ncp invalid command: incorrect format in "
                 "<dest_file_name>@<comp_name>\n");
         exit(1);
     }
@@ -212,60 +209,60 @@ int main(int argc, char* argv[]) {
                     // receives ack and nack
                     case RCV_ACK:
                     {
-                            // if ack changes, slide window and send new packets
-                            printf("got ack %d, nums_nack %d\n", mess_pac.ack, mess_pac.nums_nack);
-                            if ((mess_pac.ack != UINT_MAX && mess_pac.ack >= start_sequence)) {
-                                    unsigned int cur;
-                                    for (cur = start_sequence + WINDOW_SIZE;
-                                                    cur <= mess_pac.ack + WINDOW_SIZE; cur++) {
-                                            temp_pac.tag = NCP_FILE;
-                                            temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
+                        // if ack changes, slide window and send new packets
+                        printf("got ack %d, nums_nack %d\n", mess_pac.ack, mess_pac.nums_nack);
+                        if ((mess_pac.ack != UINT_MAX && mess_pac.ack >= start_sequence)) {
+                            unsigned int cur;
+                            for (cur = start_sequence + WINDOW_SIZE;
+                                cur <= mess_pac.ack + WINDOW_SIZE; cur++) {
+                                temp_pac.tag = NCP_FILE;
+                                temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
 
-                                            temp_pac.sequence = cur;
-                            if (temp_pac.bytes < BUF_SIZE) {
-                                if (feof(source_file)) {
-                                    printf("Finished reading.\n");
-                                    last_packet = true;
-                                    temp_pac.tag = NCP_LAST;
-                                    last_ind = curr_ind;
-                                } else {
-                                    printf("An error occurred when finishing reading\n");
-                                    exit(0);
-                                }
-                            }
-
-                            win[convert(cur, start_sequence, start_index)] = temp_pac;
-                            printf("send packet of bytes %d sequence %d\n", win[convert(cur, start_sequence, start_index)].bytes, win[convert(cur, start_sequence, start_index)].sequence);
-                            sendto_dbg(sk, (char*)&win[convert(cur, start_sequence, start_index)],
-                                            sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
-        
-                            if (last_packet) {
-                                    break;
-                            }
-
+                                temp_pac.sequence = cur;
+                                if (temp_pac.bytes < BUF_SIZE) {
+                                    if (feof(source_file)) {
+                                        printf("Finished reading.\n");
+                                        last_packet = true;
+                                        temp_pac.tag = NCP_LAST;
+                                        last_ind = curr_ind;
+                                    } else {
+                                        printf("An error occurred when finishing reading\n");
+                                        exit(0);
                                     }
-                            }
+                                }
 
-                            // if NACK exists
-                            if (mess_pac.nums_nack > 0) {
-                                    unsigned int nack_sequence;
-                            for (int i = 0; i < mess_pac.nums_nack; i++) {
-                                    memcpy(&nack_sequence, &(mess_pac.nack[i]), sizeof(unsigned int));
-                                        printf("nack is %d\n", nack_sequence);
-                                     printf("start_sequence %d, start_index %d, actual index %d\n", start_sequence, start_index, convert(nack_sequence, start_sequence, start_index)); 
-                                    printf("Retransmit packet bytes %d sequence %d\n", win[convert(nack_sequence, start_sequence, start_index)].bytes, win[convert(nack_sequence, start_sequence, start_index)].sequence);
-                                    sendto_dbg(sk, (char*)&win[convert(nack_sequence, start_sequence, start_index)],
-                                                sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
+                                win[convert(cur, start_sequence, start_index)] = temp_pac;
+                                printf("send packet of bytes %d sequence %d\n", win[convert(cur, start_sequence, start_index)].bytes, win[convert(cur, start_sequence, start_index)].sequence);
+                                sendto_dbg(sk, (char*)&win[convert(cur, start_sequence, start_index)],
+                                    sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
+                            
+                                if (last_packet) {
+                                    break;
+                                }
+
                             }
                         }
 
-                            if (mess_pac.ack != UINT_MAX) {
-                                    start_index = (start_index + mess_pac.ack + 1 - start_sequence) % WINDOW_SIZE;
-                                    start_sequence = mess_pac.ack + 1;
-                                printf("start_sequence is now %d, start_index %d\n", start_sequence, start_index);
+                            // if NACK exists
+                        if (mess_pac.nums_nack > 0) {
+                            unsigned int nack_sequence;
+                            for (int i = 0; i < mess_pac.nums_nack; i++) {
+                                memcpy(&nack_sequence, &(mess_pac.nack[i]), sizeof(unsigned int));
+                                printf("nack is %d\n", nack_sequence);
+                                printf("start_sequence %d, start_index %d, actual index %d\n", start_sequence, start_index, convert(nack_sequence, start_sequence, start_index)); 
+                                printf("Retransmit packet bytes %d sequence %d\n", win[convert(nack_sequence, start_sequence, start_index)].bytes, win[convert(nack_sequence, start_sequence, start_index)].sequence);
+                                sendto_dbg(sk, (char*)&win[convert(nack_sequence, start_sequence, start_index)],
+                                    sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
                             }
+                        }
 
-                            break;
+                        if (mess_pac.ack != UINT_MAX) {
+                            start_index = (start_index + mess_pac.ack + 1 - start_sequence) % WINDOW_SIZE;
+                            start_sequence = mess_pac.ack + 1;
+                            printf("start_sequence is now %d, start_index %d\n", start_sequence, start_index);
+                        }
+
+                        break;
 
                          /* 
                         // rcv didn't get the very first packet
@@ -290,7 +287,7 @@ int main(int argc, char* argv[]) {
                             }
                             temp_pac.tag = NCP_FILE;
                             temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
-                            
+
                             temp_pac.sequence = win[curr_ind].sequence + 1;
                             if (temp_pac.bytes < BUF_SIZE) {
                                 if (feof(source_file)) {
@@ -340,10 +337,10 @@ int main(int argc, char* argv[]) {
                     case RCV_BUSY:
                     {
                         printf("Rcv (%d.%d.%d.%d) is busy right now, will retry to connect in 10 seconds\n",
-                                                                        (htonl(rcv_ip) & 0xff000000) >> 24,
-                                                                        (htonl(rcv_ip) & 0x00ff0000) >> 16,
-                                                                        (htonl(rcv_ip) & 0x0000ff00) >> 8,
-                                                                        (htonl(rcv_ip) & 0x000000ff));
+                            (htonl(rcv_ip) & 0xff000000) >> 24,
+                            (htonl(rcv_ip) & 0x00ff0000) >> 16,
+                            (htonl(rcv_ip) & 0x0000ff00) >> 8,
+                            (htonl(rcv_ip) & 0x000000ff));
                         sleep(8);  // sleep for 8 seconds
                         break;
                     }
