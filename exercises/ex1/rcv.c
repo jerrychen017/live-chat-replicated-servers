@@ -5,8 +5,6 @@
 
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
-void add(unsigned int* megabytes, unsigned int* bytes, int bytes_written);
-
 int main(int argc, char** argv) {
     
     // argc error checking
@@ -99,14 +97,14 @@ int main(int argc, char** argv) {
     // valid bytes in last packet
     unsigned int last_packet_bytes = 0;
 
-    // number of megabytes written
-    unsigned int megabytes = 0;
     // number of bytes written
     unsigned int bytes = 0;
     // clock when receive the first packet
     clock_t start_clock;
     // clock when receive last 100 Mbytes
     clock_t last_clock;
+    
+    int counter = 0;
 
     for (;;) {
         read_mask = mask;
@@ -197,7 +195,9 @@ int main(int argc, char** argv) {
                     {
                         // record the last sequence
                         last_sequence = packet_received.sequence;
+                        printf("last sequence is %d\n", last_sequence);
                         last_packet_bytes = packet_received.bytes;
+                        printf("last packet bytes is %d \n", last_packet_bytes);
                     }
 
                     // if sender is transferring
@@ -221,33 +221,36 @@ int main(int argc, char** argv) {
                         
                         // write to file
                         for (cur = start_sequence; cur < gap; cur++) {
-                            unsigned int old_megabytes = megabytes;
+                            unsigned int old_bytes = bytes;
                             // if writing the last packet to file
                             if (last_sequence != UINT_MAX && cur == last_sequence) {
                                 int bytes_written = fwrite(window[convert(cur,
                                             start_sequence, start_index)], 1, last_packet_bytes, fw);
+                                printf("#%d: LAST bytes_written = %d written to sequence %d\n", counter, bytes_written, cur);
                                 // error checking on bytes written
                                 if (bytes_written != last_packet_bytes) {
                                     printf("Warning: write LAST packet to file is not %d bytes\n", last_packet_bytes);
                                 }
-                                add(&megabytes, &bytes, bytes_written);
+                                bytes += bytes_written;
                             } else {
                                 int bytes_written = fwrite(window[convert(cur,
                                             start_sequence, start_index)], 1, BUF_SIZE, fw);
+                                printf("#%d: bytes_written = %d written to sequence %d \n", counter, bytes_written, cur);
                                 // error checking on bytes written
                                 if (bytes_written != BUF_SIZE) {
                                     printf("Warning: write to file less than %lu bytes\n", BUF_SIZE);
                                 }
-                                add(&megabytes, &bytes, bytes_written);
+                                bytes += bytes_written;
                             }
+                            counter++;
                             // clear the timestamp
                             timerclear(&timestamps[convert(cur, start_sequence, start_index)]);
 
                             // report statistics every 100 MBytes
-                            if (old_megabytes % 100 != megabytes % 100) {
+                            if (old_bytes / 100000000 != bytes / 100000000) {
                                 double seconds = (double) (clock() - last_clock) / CLOCKS_PER_SEC;
-                                printf("Report: total amount of data transferred is %u Mbytes\n", megabytes);
-                                printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) 800 / seconds);
+                                printf("Report: total amount of data transferred is %u Mbytes\n", bytes / 1000000);
+                                printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) (bytes - old_bytes) / 125000 / seconds);
                                 last_clock = clock();
                             }
                         }
@@ -347,10 +350,10 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x000000ff));
 
                             double seconds = (double) (clock() - start_clock) / CLOCKS_PER_SEC;
-                            printf("Report: Size of file transferred is %.2f Mbytes\n", megabytes + (double) bytes / 1000000);
+                            printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / 1000000);
                             printf("        Amount of time spent is %.2f seconds\n", seconds);
                             printf("        Average rate is %.2f Mbits/sec\n",
-                                    (megabytes + (double) bytes / 1000000) * 8 / seconds);
+                                    (double) bytes / 125000 / seconds);
                             printf("-----------------END------------------\n");
 
                             // clean up
@@ -363,7 +366,6 @@ int main(int argc, char** argv) {
                                 timerclear(&timestamps[i]);
                             }
                             last_sequence = UINT_MAX;
-                            megabytes = 0;
                             bytes = 0;
                         }
 
@@ -383,10 +385,5 @@ int main(int argc, char** argv) {
 unsigned int convert(unsigned int sequence, unsigned int start_sequence,
                      unsigned int start_index) {
   return (sequence - start_sequence + start_index) % WINDOW_SIZE;
-}
-
-void add(unsigned int* megabytes, unsigned int* bytes, int bytes_written) {
-    *megabytes += bytes_written / 1000000;
-    *bytes += bytes_written - bytes_written / 1000000 * 1000000;
 }
 
