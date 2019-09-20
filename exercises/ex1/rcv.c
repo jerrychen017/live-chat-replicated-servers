@@ -3,8 +3,6 @@
 #include "sendto_dbg.h"
 #include "tag.h"
 
-#define NACK_INTERVAL 2
-
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
 void add(unsigned int* megabytes, unsigned int* bytes, int bytes_written);

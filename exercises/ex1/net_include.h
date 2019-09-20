@@ -18,5 +18,4 @@
 #include <sys/time.h>
 
 #define PORT 10100
-
-#define MAX_MESS_LEN 1400
+#define NACK_INTERVAL 2

@@ -1,6 +1,7 @@
 #ifndef PACKET_H
 #define PACKET_H
 
+#define MAX_PACKET_SIZE 1400
 #define WINDOW_SIZE 16
 #define PACKET_SIZE 100
 #define BUF_SIZE PACKET_SIZE - 3 * sizeof(unsigned int)
