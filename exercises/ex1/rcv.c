@@ -123,14 +123,24 @@ int main(int argc, char** argv) {
                         (struct sockaddr*) &sockaddr_ncp, &sockaddr_ncp_len);
                 int ncp_ip = sockaddr_ncp.sin_addr.s_addr;
                 
-                // if sender is NOT current client, assume it's previous client
-                if (busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0) {
+                // if sender is not busy, and sender does NOT send filename
+                if (!busy && packet_received.tag != NCP_FILENAME) {
+
+                }
+
+
+                // if sender is busy, and sender is NOT current client
+                if ((busy && memcmp(&sockaddr_ncp, &sockaddr_client, sockaddr_ncp_len) != 0)
+                        // if sender is not busy, and sender does NOT send filename
+                        || (!busy && packet_received.tag != NCP_FILENAME)) {
+                    
+                    // assume sender is previous client
                     // send special finish tag
                     packet_sent.tag = RCV_END;
                     sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                             (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                     
-                    printf("Sender (%d.%d.%d.%d) is not current client, respond with RCV_END packet\n",
+                    printf("Sender (%d.%d.%d.%d) is not current client, or does not send proper NCP_FILENAME tag, respond with RCV_END packet\n",
                             (htonl(ncp_ip) & 0xff000000) >> 24,
                             (htonl(ncp_ip) & 0x00ff0000) >> 16,
                             (htonl(ncp_ip) & 0x0000ff00) >> 8,
