@@ -3,8 +3,10 @@
 #include "sendto_dbg.h"
 #include "tag.h"
 
-// DISCUSS: error checking each ugrad?
-// TODO when total_sent_bytes reaches 3 gigabytes, we change unit
+unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
+
+// TODO: error checking each ugrad?
+// TODO: (low priority) when total_sent_bytes reaches 3 gigabytes, we change unit
 int main(int argc, char* argv[]) {
   // args error checking
   if (argc != 4) {
@@ -22,23 +24,27 @@ int main(int argc, char* argv[]) {
         "100]\n");
     exit(1);
   }
+
   sendto_dbg_init(loss_rate_percent);
 
   // extract computer name and destination file name from args
-  char comp_name[8] = {'\0'};  // ugrad machines name
-
-  struct packet start_packet;
-  start_packet.tag = NCP_FILENAME;
-  start_packet.sequence = 0;
-  start_packet.bytes = 0;
+  char comp_name[8] = {'\0'};
   char* temp = argv[3];
   int comp_char_index = 0;
   bool has_at = false;
 
-  // parse rcv name from command line
+  // initialize packet
+  struct packet start_packet;
+  start_packet.tag = NCP_FILENAME;
+  start_packet.sequence = 0;
+  start_packet.bytes = 0;
+
+  // parse filename and rcv name from command line
   for (int i = 0; i < strlen(temp); i++) {
     if ((!has_at) && temp[i] != '@') {
+      // put filename to packet
       start_packet.file[i] = temp[i];
+      // record size of filename in packet
       start_packet.bytes += sizeof(char);
     } else if ((!has_at) && temp[i] == '@') {
       has_at = true;
@@ -59,22 +65,14 @@ int main(int argc, char* argv[]) {
 
   // address of ncp
   struct sockaddr_in name;
-  // address of incoming requests
+  // address of incoming packets
   struct sockaddr_in send_addr;
   // address of rcv
   struct sockaddr_in from_addr;
   socklen_t from_len;
 
-  // int from_ip;
   // socket both for sending and receiving
-  int sk;
-  fd_set mask;
-  fd_set read_mask;
-  int num;
-  struct timeval timeout;
-
-  // socket for receiving messages
-  sk = socket(AF_INET, SOCK_DGRAM, 0);
+  int sk = socket(AF_INET, SOCK_DGRAM, 0);
   if (sk < 0) {
     perror("ncp: socket");
     exit(1);
@@ -84,11 +82,13 @@ int main(int argc, char* argv[]) {
   name.sin_addr.s_addr = INADDR_ANY;
   name.sin_port = htons(PORT);
 
+  // bind socket with port
   if (bind(sk, (struct sockaddr*)&name, sizeof(name)) < 0) {
     perror("ncp: bind");
     exit(1);
   }
 
+  // get rcv address
   struct hostent* rcv_name;
   struct hostent rcv_name_copy;
   int rcv_fd;
@@ -100,29 +100,46 @@ int main(int argc, char* argv[]) {
   memcpy(&rcv_name_copy, rcv_name, sizeof(rcv_name_copy));
   memcpy(&rcv_fd, rcv_name_copy.h_addr_list[0], sizeof(rcv_fd));
 
+  // send send_addr to be rcv address
   send_addr.sin_family = AF_INET;
   send_addr.sin_addr.s_addr = rcv_fd;
   send_addr.sin_port = htons(PORT);
+
+  fd_set mask;
+  fd_set read_mask;
+  int num;
 
   FD_ZERO(&mask);
   FD_SET(sk, &mask);
 
   FILE* source_file;  // pointer to source file
   if ((source_file = fopen(argv[2], "r")) == NULL) {
-    perror("fopen");
-    exit(0);
+    perror("ncp: fopen");
+    exit(1);
   }
 
-  printf("Opened %s for reading...\n", argv[2]);
+  printf("Open file %s for transferring\n", argv[2]);
 
+  // timer for retransmission
+  struct timeval timeout;
+
+  // packet to send to rcv
   struct packet_mess mess_pac;
+  // window to store packets to send
   struct packet win[WINDOW_SIZE];
+
   int curr_ind_zero = 0;
   int curr_ind = 0;  // the index which is the index the sender sended up to
+  
+  int start_sequence = 0;
+  int start_index = 0;
+
+  // if have established connection with rcv
   bool begin = false;
   // indicating if the file chunk read is the last packet
   bool last_packet = false;
   int last_ind = 0; 
+  
   struct packet temp_pac;
 
   // send filename to rcv
@@ -142,29 +159,25 @@ int main(int argc, char* argv[]) {
 
   for (;;) {
     read_mask = mask;
-    timeout.tv_sec = 10;
+    timeout.tv_sec = NACK_INTERVAL;
     timeout.tv_usec = 0;
     num = select(FD_SETSIZE, &read_mask, NULL, NULL, &timeout);
     if (num > 0) {
-      // receiving message
       if (FD_ISSET(sk, &read_mask)) {
         from_len = sizeof(from_addr);
+        // TODO: What if receive an ack from NOT current rcv?
         recvfrom(sk, &mess_pac, sizeof(struct packet_mess), 0,
                  (struct sockaddr*)&from_addr, &from_len);
-        // from_ip = from_addr.sin_addr.s_addr;
-        // printf("Received Ack and Nack message from (%d.%d.%d.%d): ack is
-        // %d\n",
-        //        (htonl(from_ip) & 0xff000000) >> 24,
-        //        (htonl(from_ip) & 0x00ff0000) >> 16,
-        //        (htonl(from_ip) & 0x0000ff00) >> 8,
-        //        (htonl(from_ip) & 0x000000ff), mess_pac.ack);
+        int rcv_ip = from_addr.sin_addr.s_addr;
 
         switch (mess_pac.tag) {
           // receiver is not busy, we can get started
           case RCV_START:
+          {
             begin = true;
             begin_total_t = clock();
             sent_start_t = clock();
+            
             // initialize window and send each packet after each read
             for (int i = 0; i < WINDOW_SIZE; i++) {
               if (last_packet) {  // break and stop reading if last packet was
@@ -185,22 +198,85 @@ int main(int argc, char* argv[]) {
                   exit(0);
                 }
               }
+              // TODO: change to malloc to avoid copying
               win[i] = temp_pac;
               sendto_dbg(sk, (char*)&temp_pac, sizeof(struct packet), 0,
                          (struct sockaddr*)&send_addr, sizeof(send_addr));
               curr_ind = i;
             }
             break;
+          
+          }
+
           // in the process of transferring packets.
           // receives ack and nack
           case RCV_ACK:
+          {
+              // if ack changes, slide window and send new packets
+              printf("got ack %d, nums_nack %d\n", mess_pac.ack, mess_pac.nums_nack);
+              if ((mess_pac.ack != UINT_MAX && mess_pac.ack >= start_sequence)) {
+                  unsigned int cur;
+                  for (cur = start_sequence + WINDOW_SIZE;
+                          cur <= mess_pac.ack + WINDOW_SIZE; cur++) {
+                      temp_pac.tag = NCP_FILE;
+                      temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
+
+                      temp_pac.sequence = cur;
+              if (temp_pac.bytes < BUF_SIZE) {
+                if (feof(source_file)) {
+                  printf("Finished reading.\n");
+                  last_packet = true;
+                  temp_pac.tag = NCP_LAST;
+                  last_ind = curr_ind;
+                } else {
+                  printf("An error occurred when finishing reading\n");
+                  exit(0);
+                }
+              }
+
+              win[convert(cur, start_sequence, start_index)] = temp_pac;
+              printf("send packet of bytes %d sequence %d\n", win[convert(cur, start_sequence, start_index)].bytes, win[convert(cur, start_sequence, start_index)].sequence);
+              sendto_dbg(sk, (char*)&win[convert(cur, start_sequence, start_index)],
+                      sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
+    
+              if (last_packet) {
+                  break;
+              }
+
+                  }
+              }
+
+              // if NACK exists
+              if (mess_pac.nums_nack > 0) {
+                  unsigned int nack_sequence;
+              for (int i = 0; i < mess_pac.nums_nack; i++) {
+                  memcpy(&nack_sequence, &(mess_pac.nack[i]), sizeof(unsigned int));
+                    printf("nack is %d\n", nack_sequence);
+                   printf("start_sequence %d, start_index %d, actual index %d\n", start_sequence, start_index, convert(nack_sequence, start_sequence, start_index)); 
+                  printf("Retransmit packet bytes %d sequence %d\n", win[convert(nack_sequence, start_sequence, start_index)].bytes, win[convert(nack_sequence, start_sequence, start_index)].sequence);
+                  sendto_dbg(sk, (char*)&win[convert(nack_sequence, start_sequence, start_index)],
+                        sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
+              }
+            }
+
+              if (mess_pac.ack != UINT_MAX) {
+                  start_index = (start_index + mess_pac.ack + 1 - start_sequence) % WINDOW_SIZE;
+                  start_sequence = mess_pac.ack + 1;
+                printf("start_sequence is now %d, start_index %d\n", start_sequence, start_index);
+              }
+
+              break;
+
+             /* 
             // rcv didn't get the very first packet
+            // TODO: can also send NACK in this case
             if (mess_pac.ack == UINT_MAX) {
               sendto_dbg(sk, (char*)&win[curr_ind_zero], sizeof(struct packet),
                          0, (struct sockaddr*)&send_addr, sizeof(send_addr));
 
               break;
             }
+
             unsigned int nums_nack = mess_pac.nums_nack;
             int first_sequence = win[curr_ind_zero].sequence;
 
@@ -257,13 +333,23 @@ int main(int argc, char* argv[]) {
               }
             }
             break;
+  */        
+          }
+
           // receiver is busy
           case RCV_BUSY:
-            printf("RCV is busy!\n");
-            sleep(10);  // sleep for 10 seconds and then come back
+          {
+            printf("Rcv (%d.%d.%d.%d) is busy right now, will retry to connect in 10 seconds\n",
+                                    (htonl(rcv_ip) & 0xff000000) >> 24,
+                                    (htonl(rcv_ip) & 0x00ff0000) >> 16,
+                                    (htonl(rcv_ip) & 0x0000ff00) >> 8,
+                                    (htonl(rcv_ip) & 0x000000ff));
+            sleep(8);  // sleep for 8 seconds
             break;
+          }
+
           case RCV_END:  // receiver respond finished
-            finish_total_t = clock();
+/*            finish_total_t = clock();
             // TODO: report size of file, average rate at which communication
             // occurred.
             total_sent_bytes += win[last_ind].bytes+sent_bytes;
@@ -275,6 +361,8 @@ int main(int argc, char* argv[]) {
             printf("Total time used %f sec\n", time);
             printf("Average file transfer rate is %.2fMbits/sec\n",
                    (total_sent_bytes / 125000) / time);
+
+       */
             printf("File Transfer Completed!\n");
             fclose(source_file);
             exit(0);
@@ -287,13 +375,13 @@ int main(int argc, char* argv[]) {
         }
       }
     } else {  // when timeout
-      printf("timeout! \n");
+      printf("Haven't heard response for over %d seconds, timeout\n", NACK_INTERVAL);
       if (!begin) {
         sendto_dbg(sk, (char*)&start_packet, sizeof(struct packet), 0,
                    (struct sockaddr*)&send_addr, sizeof(send_addr));
 
       } else {
-        sendto_dbg(sk, (char*)&win[curr_ind], sizeof(struct packet), 0,
+        sendto_dbg(sk, (char*)&win[convert(start_sequence + WINDOW_SIZE - 1, start_sequence, start_index)], sizeof(struct packet), 0,
                    (struct sockaddr*)&send_addr, sizeof(send_addr));
       }
       //   fflush(0);
@@ -301,4 +389,9 @@ int main(int argc, char* argv[]) {
 
   }  // ending for loop
   return 0;
+}
+
+unsigned int convert(unsigned int sequence, unsigned int start_sequence,
+                     unsigned int start_index) {
+  return (sequence - start_sequence + start_index) % WINDOW_SIZE;
 }
