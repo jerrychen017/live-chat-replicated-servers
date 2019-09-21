@@ -2,8 +2,7 @@
 #include "packet.h"
 #include "sendto_dbg.h"
 #include "tag.h"
-
-unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
+#include "helper.h"
 
 int main(int argc, char** argv) {
     
@@ -99,11 +98,11 @@ int main(int argc, char** argv) {
 
     // number of bytes written
     unsigned int bytes = 0;
-    // clock when receive the first packet
-    clock_t start_clock;
-    // clock when receive last 100 Mbytes
-    clock_t last_clock;
     
+    // record starting time of transfer   
+    struct timeval start_time;
+    struct timeval last_time;
+
     for (;;) {
         read_mask = mask;
         idle_interval.tv_sec = 10;
@@ -167,21 +166,20 @@ int main(int argc, char** argv) {
 
                             // send packet to start transfer
                             packet_sent.tag = RCV_START;
-                            printf("\n");
-                            printf("----------------START-----------------\n");
+                            printf("\n----------------START-----------------\n");
                             printf("Establish connection with sender (%d.%d.%d.%d)\n",
                                     (htonl(ncp_ip) & 0xff000000) >> 24,
                                     (htonl(ncp_ip) & 0x00ff0000) >> 16,
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
                             printf("Start transferring file %s\n", filename);
+
+                            // record starting time
+                            gettimeofday(&start_time, NULL);
+                            gettimeofday(&last_time, NULL);
                         }
                         sendto_dbg(sk, (char *)&packet_sent, sizeof(struct packet_mess), 0, 
                                 (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
-                        
-                        // start clock to record time for transfer
-                        start_clock = clock();
-                        last_clock = clock();
                         break;
                     }
 
@@ -196,6 +194,19 @@ int main(int argc, char** argv) {
                     // if sender is transferring
                     case NCP_FILE:
                     {
+                        
+                        // if received packets we have acknowledged
+                        // we have acknowledged one window, but ACK packet is lost
+                        // send back ACK again
+                        if (packet_received.sequence < start_sequence) {
+                            packet_sent.tag = RCV_ACK;
+                            packet_sent.ack = start_sequence - 1;
+                            packet_sent.nums_nack = 0;
+                            sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
+                                    (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
+                            break;
+                        }
+
                         unsigned int index = convert(packet_received.sequence, start_sequence, start_index);
                         memcpy(window[index], packet_received.file, packet_received.bytes);
                         
@@ -237,13 +248,21 @@ int main(int argc, char** argv) {
 
                             // report statistics every 100 MBytes
                             if (old_bytes / 100000000 != bytes / 100000000) {
-                                double seconds = (double) (clock() - last_clock) / CLOCKS_PER_SEC;
+                                struct timeval current_time;
+                                gettimeofday(&current_time, NULL);
+                                struct timeval diff_time = diffTime(current_time, last_time);
+                                double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
                                 printf("Report: total amount of data transferred is %u Mbytes\n", bytes / (1024 * 1024));
                                 printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) (100) * 8 / seconds);
-                                last_clock = clock();
+                                last_time = current_time;
                             }
                         }
                         
+                        // mark written cells as not occupied
+                        for (cur = start_sequence; cur < gap; cur++) {
+                            occupied[convert(cur, start_sequence, start_index)] = false;
+                        }
+
                         // put ACK in the return packet
                         packet_sent.tag = RCV_ACK;
 
@@ -260,13 +279,18 @@ int main(int argc, char** argv) {
                             packet_sent.nums_nack = 0;
                         } else {
                             // find the last received packet in window
-                            for (cur = start_sequence + WINDOW_SIZE - 1; cur >= gap; cur--) {
-                                if (occupied[convert(cur, start_sequence, start_index)]) {
-                                    break;
+                            // if have NOT receive the last packet
+                            if (last_sequence == UINT_MAX) {
+                                for (cur = start_sequence + WINDOW_SIZE - 1; cur >= gap; cur--) {
+                                    if (occupied[convert(cur, start_sequence, start_index)]) {
+                                        break;
+                                    }
                                 }
+                            } else {
+                                cur = last_sequence;
                             }
                             unsigned int last_received = cur;
-                            
+                           
                             // if no received packet after gap
                             if (last_received == gap - 1) {
                                 packet_sent.nums_nack = 0;
@@ -312,15 +336,9 @@ int main(int argc, char** argv) {
 
                         }
                         
-                        // mark written cells as not occupied
-                        for (cur = start_sequence; cur < gap; cur++) {
-                            occupied[convert(cur, start_sequence, start_index)] = false;
-                        }
-
                         // slide window
-                        start_sequence = gap;
                         start_index = (start_index + gap - start_sequence) % WINDOW_SIZE;
-
+                        start_sequence = gap;
 
                         // if haven't received last packet
                         if (last_sequence == UINT_MAX || start_sequence != last_sequence + 1) {
@@ -338,8 +356,11 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
 
-                            double seconds = (double) (clock() - start_clock) / CLOCKS_PER_SEC;
-                            printf("Report: Size of file transferred is %d bytes\n", bytes);
+                            struct timeval end_time;
+                            gettimeofday(&end_time, NULL);
+                            struct timeval diff_time = diffTime(end_time, start_time);
+                            double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
+                            printf("Report: Size of file transferred is %u bytes\n", bytes);
                             printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / (1024 * 1024));
                             printf("        Amount of time spent is %.2f seconds\n", seconds);
                             printf("        Average rate is %.2f Mbits/sec\n",
@@ -371,9 +392,3 @@ int main(int argc, char** argv) {
     }
     return 0;
 }
-
-unsigned int convert(unsigned int sequence, unsigned int start_sequence,
-                     unsigned int start_index) {
-  return (sequence - start_sequence + start_index) % WINDOW_SIZE;
-}
-

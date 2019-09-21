@@ -17,5 +17,5 @@
 
 #include <sys/time.h>
 
-#define PORT 10100
-#define NACK_INTERVAL 2
+#define PORT 10030
+#define NACK_INTERVAL 1
