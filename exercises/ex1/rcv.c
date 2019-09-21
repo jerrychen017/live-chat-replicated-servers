@@ -56,8 +56,8 @@ int main(int argc, char** argv) {
     struct timeval idle_interval;
     // interval in between sending NACK
     struct timeval nack_interval;
-    nack_interval.tv_sec = NACK_INTERVAL;
-    nack_interval.tv_usec = 0;
+    nack_interval.tv_sec = NACK_INTERVAL_SEC;
+    nack_interval.tv_usec = NACK_INTERVAL_USEC;
 
     // socket address of received packet
     struct sockaddr_in sockaddr_ncp;
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     struct packet_mess packet_sent;
 
     // window to store files
-    struct packet window[WINDOW_SIZE][BUF_SIZE];
+    char window[WINDOW_SIZE][BUF_SIZE];
     // sequence which the first cell of window corresponds to
     unsigned int start_sequence = 0;
     // start index of the array
@@ -360,7 +360,6 @@ int main(int argc, char** argv) {
                             gettimeofday(&end_time, NULL);
                             struct timeval diff_time = diffTime(end_time, start_time);
                             double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
-                            printf("Report: Size of file transferred is %u bytes\n", bytes);
                             printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / (1024 * 1024));
                             printf("        Amount of time spent is %.2f seconds\n", seconds);
                             printf("        Average rate is %.2f Mbits/sec\n",
