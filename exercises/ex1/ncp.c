@@ -215,6 +215,7 @@ int main(int argc, char* argv[]) {
                     // receives ack and nack
                     case RCV_ACK:
                     {
+                        //print_packet_mess(&mess_pac);
                         // if ack changes, slide window and send new packets
                         if ((mess_pac.ack != UINT_MAX && mess_pac.ack >= start_sequence)) {
                             
@@ -334,7 +335,7 @@ int main(int argc, char* argv[]) {
                 }
             }
         } else {
-            printf("Haven't heard response for over %d seconds, timeout!\n", NACK_INTERVAL);
+            //printf("Haven't heard response for over %d seconds, timeout!\n", NACK_INTERVAL);
             if (!begin) {
                 printf("Resend connect request to (%d.%d.%d.%d)\n",
                         (htonl(send_addr.sin_addr.s_addr) & 0xff000000) >> 24,
@@ -351,6 +352,7 @@ int main(int argc, char* argv[]) {
                 } else {
                     last = start_sequence + WINDOW_SIZE - 1;
                 }
+                //printf("retransmit\n");
                 // retransmit LAST packet in the window
                 sendto_dbg(sk, (char*)&win[convert(last, start_sequence, start_index)], sizeof(struct packet), 0,
                                      (struct sockaddr*)&send_addr, sizeof(send_addr));

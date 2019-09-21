@@ -30,10 +30,10 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence,
 }
 
 
-void print_sent_packet(struct packet_mess* packet_sent)
+void print_packet_mess(struct packet_mess* packet_sent)
 {
 
-    printf("Sent packet with ack %d, nums_nack %d, nacks: ", packet_sent->ack, packet_sent->nums_nack);
+    printf("packet: ack %d, nums_nack %d, nacks: ", packet_sent->ack, packet_sent->nums_nack);
     for (int i = 0; i < packet_sent->nums_nack; i++) {
         printf("%d ", packet_sent->nack[i]);
     }
@@ -41,7 +41,7 @@ void print_sent_packet(struct packet_mess* packet_sent)
 }
 
 
-void print_received_packet(struct packet* packet_received)
+void print_packet(struct packet* packet_received)
 {
-    printf("Receive packet with sequence %d, bytes %d\n", packet_received->sequence, packet_received->bytes);
+    printf("packet_mess: sequence %d, bytes %d\n", packet_received->sequence, packet_received->bytes);
 }

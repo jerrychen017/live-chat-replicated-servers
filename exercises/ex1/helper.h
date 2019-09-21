@@ -13,7 +13,7 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigne
 
 /* Print packet information for debugging purpose
  */
-void print_sent_packet(struct packet_mess* packet_sent);
-void print_received_packet(struct packet* packet_received);
+void print_packet_mess(struct packet_mess* packet_sent);
+void print_packet(struct packet* packet_received);
 
 #endif
