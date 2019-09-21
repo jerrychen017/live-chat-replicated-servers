@@ -170,7 +170,10 @@ int main(int argc, char* argv[]) {
                 switch (mess_pac.tag) {
                     // receiver is not busy, we can get started
                     case RCV_START:
-                    {
+                    {   
+                        if (begin) {
+                            break;
+                        }
                         printf("-----------------START------------------\n");
                         begin = true;
                         // record starting time
@@ -314,7 +317,6 @@ int main(int argc, char* argv[]) {
                         gettimeofday(&end_time, NULL);
                         struct timeval diff_time = diffTime(end_time, start_time);
                         double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
-                        
                         printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / (1024 * 1024));
                         printf("        Amount of time spent is %.2f seconds\n", seconds);
                         printf("        Average rate is %.2f Mbits/sec\n",
