@@ -4,6 +4,8 @@
 #include "tag.h"
 
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
+void print_sent_packet(struct packet_mess* packet_sent);
+void print_received_packet(struct packet* packet_received);
 
 int main(int argc, char** argv) {
     
@@ -175,13 +177,13 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
                             printf("Start transferring file %s\n", filename);
+
+                            // start clock to record time for transfer
+                            start_clock = clock();
+                            last_clock = clock();
                         }
                         sendto_dbg(sk, (char *)&packet_sent, sizeof(struct packet_mess), 0, 
                                 (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
-                        
-                        // start clock to record time for transfer
-                        start_clock = clock();
-                        last_clock = clock();
                         break;
                     }
 
@@ -190,18 +192,41 @@ int main(int argc, char** argv) {
                     {
                         // record the last sequence
                         last_sequence = packet_received.sequence;
+                        printf("lastlast sequence is %d\n", last_sequence);
                         last_packet_bytes = packet_received.bytes;
+                        printf("last packet size is %d\n", last_packet_bytes);
                     }
 
                     // if sender is transferring
                     case NCP_FILE:
                     {
+                        printf("----------------START-----------------\n");
+                        print_received_packet(&packet_received);
+                        
+                        // if received packets we have acknowledged
+                        // we have acknowledged one window, but ACK packet is lost
+                        // send back ACK again
+                        if (packet_received.sequence < start_sequence) {
+                            packet_sent.tag = RCV_ACK;
+                            packet_sent.ack = start_sequence - 1;
+                            packet_sent.nums_nack = 0;
+                            sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
+                                    (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
+                            break;
+                        }
+
                         unsigned int index = convert(packet_received.sequence, start_sequence, start_index);
                         memcpy(window[index], packet_received.file, packet_received.bytes);
                         
                         // mark cell as occupied
                         occupied[index] = true;
 
+                        printf("start sequence is %d\n", start_sequence);
+                        printf("start index is %d\n", start_index);
+                        printf("occupied array:\n");
+                        for (int i = 0; i < WINDOW_SIZE; i++) {
+                            printf("index %d: %d ", i, occupied[i]);
+                        }
                         // find the first gap in the window                        
                         unsigned int cur;
                         for (cur = start_sequence; cur < start_sequence + WINDOW_SIZE; cur++) {
@@ -211,7 +236,7 @@ int main(int argc, char** argv) {
                             }
                         }
                         unsigned int gap = cur;
-                        
+                        printf("gap is %d\n", gap);
                         // write to file
                         for (cur = start_sequence; cur < gap; cur++) {
                             unsigned int old_bytes = bytes;
@@ -237,13 +262,18 @@ int main(int argc, char** argv) {
 
                             // report statistics every 100 MBytes
                             if (old_bytes / 100000000 != bytes / 100000000) {
-                                double seconds = (double) (clock() - last_clock) / CLOCKS_PER_SEC;
+                                double seconds = ((double) (clock() - last_clock)) / CLOCKS_PER_SEC;
                                 printf("Report: total amount of data transferred is %u Mbytes\n", bytes / (1024 * 1024));
                                 printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) (100) * 8 / seconds);
                                 last_clock = clock();
                             }
                         }
                         
+                        // mark written cells as not occupied
+                        for (cur = start_sequence; cur < gap; cur++) {
+                            occupied[convert(cur, start_sequence, start_index)] = false;
+                        }
+
                         // put ACK in the return packet
                         packet_sent.tag = RCV_ACK;
 
@@ -260,13 +290,19 @@ int main(int argc, char** argv) {
                             packet_sent.nums_nack = 0;
                         } else {
                             // find the last received packet in window
-                            for (cur = start_sequence + WINDOW_SIZE - 1; cur >= gap; cur--) {
-                                if (occupied[convert(cur, start_sequence, start_index)]) {
-                                    break;
+                            // if have NOT receive the last packet
+                            if (last_sequence == UINT_MAX) {
+                                for (cur = start_sequence + WINDOW_SIZE - 1; cur >= gap; cur--) {
+                                    if (occupied[convert(cur, start_sequence, start_index)]) {
+                                        break;
+                                    }
                                 }
+                            } else {
+                                cur = last_sequence;
                             }
                             unsigned int last_received = cur;
-                            
+                           
+                            printf("last received packet sequence is %d\n", last_received); 
                             // if no received packet after gap
                             if (last_received == gap - 1) {
                                 packet_sent.nums_nack = 0;
@@ -312,20 +348,18 @@ int main(int argc, char** argv) {
 
                         }
                         
-                        // mark written cells as not occupied
-                        for (cur = start_sequence; cur < gap; cur++) {
-                            occupied[convert(cur, start_sequence, start_index)] = false;
-                        }
-
                         // slide window
-                        start_sequence = gap;
                         start_index = (start_index + gap - start_sequence) % WINDOW_SIZE;
+                        start_sequence = gap;
 
-
+                        printf("start sequence is %d\n", start_sequence);
+                        printf("start index is %d\n", start_index);
                         // if haven't received last packet
                         if (last_sequence == UINT_MAX || start_sequence != last_sequence + 1) {
+                            print_sent_packet(&packet_sent);
                             sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
+                            printf("-----------------END------------------\n\n");
                         } else {
                             // send special finish tag
                             packet_sent.tag = RCV_END;
@@ -338,7 +372,8 @@ int main(int argc, char** argv) {
                                     (htonl(ncp_ip) & 0x0000ff00) >> 8,
                                     (htonl(ncp_ip) & 0x000000ff));
 
-                            double seconds = (double) (clock() - start_clock) / CLOCKS_PER_SEC;
+                            // TODO: Error check on start_clock
+                            double seconds = ((double) (clock() - start_clock)) / CLOCKS_PER_SEC;
                             printf("Report: Size of file transferred is %d bytes\n", bytes);
                             printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / (1024 * 1024));
                             printf("        Amount of time spent is %.2f seconds\n", seconds);
@@ -377,3 +412,15 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence,
   return (sequence - start_sequence + start_index) % WINDOW_SIZE;
 }
 
+void print_sent_packet(struct packet_mess* packet_sent) {
+
+    printf("Sent packet with ack %d, nums_nack %d, nacks: ", packet_sent->ack, packet_sent->nums_nack);
+    for (int i = 0; i < packet_sent->nums_nack; i++) {
+        printf("%d ", packet_sent->nack[i]);
+    }
+    printf("\n");
+}
+
+void print_received_packet(struct packet* packet_received) {
+    printf("Receive packet with sequence %d, bytes %d\n", packet_received->sequence, packet_received->bytes);
+}

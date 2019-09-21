@@ -136,6 +136,7 @@ int main(int argc, char* argv[]) {
     // indicating if the file chunk read is the last packet
     bool last_packet = false;
     int last_ind = 0; 
+    int last_sequence = 0;
     
     struct packet temp_pac;
 
@@ -190,13 +191,16 @@ int main(int argc, char* argv[]) {
                                     temp_pac.tag = NCP_LAST;
                                     last_packet = true;
                                     last_ind = curr_ind; 
+                                    last_sequence = i;
                                 } else {
                                     printf("An error occurred when finished reading...\n");
                                     exit(0);
                                 }
                             }
+                            printf("read file with sequence %d bytes %d to window index %d\n", temp_pac.sequence, temp_pac.bytes, i);
                             // TODO: change to malloc to avoid copying
                             win[i] = temp_pac;
+                            printf("send packet of bytes %d sequence %d\n", win[i].bytes, win[i].sequence);
                             sendto_dbg(sk, (char*)&temp_pac, sizeof(struct packet), 0,
                                                  (struct sockaddr*)&send_addr, sizeof(send_addr));
                             curr_ind = i;
@@ -209,36 +213,42 @@ int main(int argc, char* argv[]) {
                     // receives ack and nack
                     case RCV_ACK:
                     {
+                        printf("----------------START-----------------\n");
                         // if ack changes, slide window and send new packets
                         printf("got ack %d, nums_nack %d\n", mess_pac.ack, mess_pac.nums_nack);
                         if ((mess_pac.ack != UINT_MAX && mess_pac.ack >= start_sequence)) {
                             unsigned int cur;
                             for (cur = start_sequence + WINDOW_SIZE;
                                 cur <= mess_pac.ack + WINDOW_SIZE; cur++) {
+                                
+                                // if already read the last packet, no need to slide the window
+                                if (last_packet) {
+                                    break;
+                                }
                                 temp_pac.tag = NCP_FILE;
                                 temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
 
                                 temp_pac.sequence = cur;
                                 if (temp_pac.bytes < BUF_SIZE) {
                                     if (feof(source_file)) {
-                                        printf("Finished reading.\n");
+                                        printf("Read last pakcet of size %d sequence %d.\n", temp_pac.bytes, temp_pac.sequence);
                                         last_packet = true;
                                         temp_pac.tag = NCP_LAST;
                                         last_ind = curr_ind;
+                                        last_sequence = cur;
                                     } else {
                                         printf("An error occurred when finishing reading\n");
                                         exit(0);
                                     }
                                 }
 
+                                printf("read file withsequence %d bytes %d to window index %d", temp_pac.sequence, temp_pac.bytes, convert(cur, start_sequence, start_index));
+
                                 win[convert(cur, start_sequence, start_index)] = temp_pac;
                                 printf("send packet of bytes %d sequence %d\n", win[convert(cur, start_sequence, start_index)].bytes, win[convert(cur, start_sequence, start_index)].sequence);
                                 sendto_dbg(sk, (char*)&win[convert(cur, start_sequence, start_index)],
                                     sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
                             
-                                if (last_packet) {
-                                    break;
-                                }
 
                             }
                         }
@@ -249,19 +259,23 @@ int main(int argc, char* argv[]) {
                             for (int i = 0; i < mess_pac.nums_nack; i++) {
                                 memcpy(&nack_sequence, &(mess_pac.nack[i]), sizeof(unsigned int));
                                 printf("nack is %d\n", nack_sequence);
-                                printf("start_sequence %d, start_index %d, actual index %d\n", start_sequence, start_index, convert(nack_sequence, start_sequence, start_index)); 
                                 printf("Retransmit packet bytes %d sequence %d\n", win[convert(nack_sequence, start_sequence, start_index)].bytes, win[convert(nack_sequence, start_sequence, start_index)].sequence);
+                                if (nack_sequence != win[convert(nack_sequence, start_sequence, start_index)].sequence) {
+                                    printf("Warning: NOT retransmit correct nack %d, but sent %d\n", nack_sequence, win[convert(nack_sequence, start_sequence, start_index)].sequence);
+                                }
                                 sendto_dbg(sk, (char*)&win[convert(nack_sequence, start_sequence, start_index)],
                                     sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
                             }
                         }
 
+                        
                         if (mess_pac.ack != UINT_MAX) {
                             start_index = (start_index + mess_pac.ack + 1 - start_sequence) % WINDOW_SIZE;
                             start_sequence = mess_pac.ack + 1;
                             printf("start_sequence is now %d, start_index %d\n", start_sequence, start_index);
                         }
 
+                        printf("-----------------END------------------\n\n");
                         break;
 
                          /* 
@@ -378,7 +392,14 @@ int main(int argc, char* argv[]) {
                                      (struct sockaddr*)&send_addr, sizeof(send_addr));
 
             } else {
-                sendto_dbg(sk, (char*)&win[convert(start_sequence + WINDOW_SIZE - 1, start_sequence, start_index)], sizeof(struct packet), 0,
+                unsigned int last;
+                if (last_packet) {
+                    last = last_sequence;
+                } else {
+                    last = start_sequence + WINDOW_SIZE - 1;
+                }
+                printf("Send LAST packet in window bytes %d sequence %d\n", win[convert(last, start_sequence, start_index)].bytes, win[convert(last, start_sequence, start_index)].sequence);
+                sendto_dbg(sk, (char*)&win[convert(last, start_sequence, start_index)], sizeof(struct packet), 0,
                                      (struct sockaddr*)&send_addr, sizeof(send_addr));
             }
             //   fflush(0);
