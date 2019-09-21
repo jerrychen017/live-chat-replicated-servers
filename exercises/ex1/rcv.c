@@ -98,7 +98,8 @@ int main(int argc, char** argv) {
 
     // number of bytes written
     unsigned int bytes = 0;
-   
+    
+    // record starting time of transfer   
     struct timeval start_time;
     struct timeval last_time;
 
@@ -341,7 +342,6 @@ int main(int argc, char** argv) {
 
                         // if haven't received last packet
                         if (last_sequence == UINT_MAX || start_sequence != last_sequence + 1) {
-                            print_sent_packet(&packet_sent);
                             sendto_dbg(sk, (char *) &packet_sent, sizeof(struct packet_mess), 0,
                                     (struct sockaddr*) &sockaddr_ncp, sizeof(sockaddr_ncp));
                         } else {
@@ -360,7 +360,7 @@ int main(int argc, char** argv) {
                             gettimeofday(&end_time, NULL);
                             struct timeval diff_time = diffTime(end_time, start_time);
                             double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
-                            printf("Report: Size of file transferred is %d bytes\n", bytes);
+                            printf("Report: Size of file transferred is %u bytes\n", bytes);
                             printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / (1024 * 1024));
                             printf("        Amount of time spent is %.2f seconds\n", seconds);
                             printf("        Average rate is %.2f Mbits/sec\n",
