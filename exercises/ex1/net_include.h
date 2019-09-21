@@ -18,4 +18,5 @@
 #include <sys/time.h>
 
 #define PORT 10030
-#define NACK_INTERVAL 1
+#define NACK_INTERVAL_SEC 0
+#define NACK_INTERVAL_USEC 125000

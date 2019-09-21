@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) {
     // args error checking
     if (argc != 4) {
         printf("ncp usage: ncp <loss_rate_percent> <source_file_name> "
-                "<dest_file_name>@<comp_name>");
+                "<dest_file_name>@<comp_name>\n");
         exit(0);
     }
 
@@ -136,8 +136,6 @@ int main(int argc, char* argv[]) {
     // sequence of the last packet
     int last_sequence = 0;
     
-    struct packet temp_pac;
-
     // send filename to rcv
     sendto_dbg(sk, (char*)&start_packet, sizeof(struct packet), 0,
                          (struct sockaddr*)&send_addr, sizeof(send_addr));
@@ -158,8 +156,8 @@ int main(int argc, char* argv[]) {
 
     for (;;) {
         read_mask = mask;
-        timeout.tv_sec = NACK_INTERVAL;
-        timeout.tv_usec = 0;
+        timeout.tv_sec = NACK_INTERVAL_SEC;
+        timeout.tv_usec = NACK_INTERVAL_USEC;
         num = select(FD_SETSIZE, &read_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if (FD_ISSET(sk, &read_mask)) {
@@ -173,40 +171,41 @@ int main(int argc, char* argv[]) {
                     // receiver is not busy, we can get started
                     case RCV_START:
                     {
+                        printf("-----------------START------------------\n");
                         begin = true;
                         // record starting time
                         gettimeofday(&start_time, NULL);                        
-
+                        gettimeofday(&last_time, NULL);
                         // initialize window and send each packet after each read
                         for (int i = 0; i < WINDOW_SIZE; i++) {
                             // break and stop reading if last packet was read
                             if (last_packet) {
                                 break;
                             }
-                            temp_pac.tag = NCP_FILE;
-                            temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
-                            temp_pac.sequence = i;
-                            if (temp_pac.bytes < BUF_SIZE) {
+                            win[i].tag = NCP_FILE;
+                            win[i].bytes = fread(win[i].file, 1, BUF_SIZE, source_file);
+                            win[i].sequence = i;
+                            if (win[i].bytes < BUF_SIZE) {
                                 if (feof(source_file)) {  // when we reach the EOF
-                                    printf("Finished reading.\n");
-                                    temp_pac.tag = NCP_LAST;
+                                    win[i].tag = NCP_LAST;
                                     last_packet = true;
                                     last_sequence = i;
-                                    last_packet_size = temp_pac.bytes;
+                                    last_packet_size = win[i].bytes;
                                 } else {
                                     printf("An error occurred when finished reading...\n");
                                     exit(0);
                                 }
                             }
-                            // TODO: change to malloc to avoid copying
-                            win[i] = temp_pac;
-                            sendto_dbg(sk, (char*)&temp_pac, sizeof(struct packet), 0,
+
+                            // save buffer size
+                            if (i == 0 && !last_packet) {
+                                buf_size = win[i].bytes;
+                            }
+
+                            sendto_dbg(sk, (char*)&win[i], sizeof(struct packet), 0,
                                                  (struct sockaddr*)&send_addr, sizeof(send_addr));
                         }
 
-                        if (!last_packet) {
-                            buf_size = temp_pac.bytes;
-                        }
                         break;
                     
                     }
@@ -233,6 +232,7 @@ int main(int argc, char* argv[]) {
                             }
                             
                             unsigned int cur;
+                            unsigned int index;
                             for (cur = start_sequence + WINDOW_SIZE;
                                 cur <= mess_pac.ack + WINDOW_SIZE; cur++) {
                                 
@@ -240,26 +240,25 @@ int main(int argc, char* argv[]) {
                                 if (last_packet) {
                                     break;
                                 }
-                                temp_pac.tag = NCP_FILE;
-                                temp_pac.bytes = fread(temp_pac.file, 1, BUF_SIZE, source_file);
+                                index = convert(cur, start_sequence, start_index);
+                                win[index].tag = NCP_FILE;
+                                win[index].bytes = fread(win[index].file, 1, BUF_SIZE, source_file);
 
-                                temp_pac.sequence = cur;
-                                if (temp_pac.bytes < BUF_SIZE) {
+                                win[index].sequence = cur;
+                                if (win[index].bytes < BUF_SIZE) {
                                     if (feof(source_file)) {
-                                        printf("Read last pakcet of size %d sequence %d.\n", temp_pac.bytes, temp_pac.sequence);
                                         last_packet = true;
-                                        temp_pac.tag = NCP_LAST;
+                                        win[index].tag = NCP_LAST;
                                         last_sequence = cur;
-                                        last_packet_size = temp_pac.bytes;
+                                        last_packet_size = win[index].bytes;
                                     } else {
                                         printf("An error occurred when finishing reading\n");
                                         exit(0);
                                     }
                                 }
 
-                                win[convert(cur, start_sequence, start_index)] = temp_pac;
-                                sendto_dbg(sk, (char*)&win[convert(cur, start_sequence, start_index)],
-                                    sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
+                                sendto_dbg(sk, (char*)&win[index], sizeof(struct packet), 0,
+                                        (struct sockaddr*)&send_addr, sizeof(send_addr));
                             
 
                             }
@@ -316,12 +315,11 @@ int main(int argc, char* argv[]) {
                         struct timeval diff_time = diffTime(end_time, start_time);
                         double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
                         
-                        printf("Report: Size of file transferred is %u bytes\n", bytes);
                         printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / (1024 * 1024));
                         printf("        Amount of time spent is %.2f seconds\n", seconds);
                         printf("        Average rate is %.2f Mbits/sec\n",
                                     (double) bytes / (1024 * 1024) * 8 / seconds);
-                        printf("-----------------END------------------\n");
+                        printf("------------------END-------------------\n");
                         
                         fclose(source_file);
                         exit(0);

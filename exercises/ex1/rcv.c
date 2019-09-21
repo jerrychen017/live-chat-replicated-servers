@@ -56,8 +56,8 @@ int main(int argc, char** argv) {
     struct timeval idle_interval;
     // interval in between sending NACK
     struct timeval nack_interval;
-    nack_interval.tv_sec = NACK_INTERVAL;
-    nack_interval.tv_usec = 0;
+    nack_interval.tv_sec = NACK_INTERVAL_SEC;
+    nack_interval.tv_usec = NACK_INTERVAL_USEC;
 
     // socket address of received packet
     struct sockaddr_in sockaddr_ncp;
