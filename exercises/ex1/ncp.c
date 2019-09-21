@@ -2,8 +2,7 @@
 #include "packet.h"
 #include "sendto_dbg.h"
 #include "tag.h"
-
-unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
+#include "helper.h"
 
 // TODO: error checking each ugrad?
 // TODO: (low priority) when total_sent_bytes reaches 3 gigabytes, we change unit
@@ -407,9 +406,4 @@ int main(int argc, char* argv[]) {
 
     }  // ending for loop
     return 0;
-}
-
-unsigned int convert(unsigned int sequence, unsigned int start_sequence,
-                                         unsigned int start_index) {
-    return (sequence - start_sequence + start_index) % WINDOW_SIZE;
 }
