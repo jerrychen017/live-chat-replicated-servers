@@ -11,9 +11,4 @@ struct timeval diffTime(struct timeval left, struct timeval right);
  */
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
-/* Print packet information for debugging purpose
- */
-void print_packet_mess(struct packet_mess* packet_sent);
-void print_packet(struct packet* packet_received);
-
 #endif

@@ -29,19 +29,3 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence,
   return (sequence - start_sequence + start_index) % WINDOW_SIZE;
 }
 
-
-void print_packet_mess(struct packet_mess* packet_sent)
-{
-
-    printf("packet: ack %d, nums_nack %d, nacks: ", packet_sent->ack, packet_sent->nums_nack);
-    for (int i = 0; i < packet_sent->nums_nack; i++) {
-        printf("%d ", packet_sent->nack[i]);
-    }
-    printf("\n");
-}
-
-
-void print_packet(struct packet* packet_received)
-{
-    printf("packet_mess: sequence %d, bytes %d\n", packet_received->sequence, packet_received->bytes);
-}

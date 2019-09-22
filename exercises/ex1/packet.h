@@ -2,7 +2,7 @@
 #define PACKET_H
 
 #define MAX_PACKET_SIZE 1400
-#define WINDOW_SIZE 1024
+#define WINDOW_SIZE 1500
 #define PACKET_SIZE MAX_PACKET_SIZE
 #define BUF_SIZE PACKET_SIZE - 3 * sizeof(unsigned int)
 #define MAX_NUMS_NACK (PACKET_SIZE - 3 * sizeof(unsigned int)) / sizeof(unsigned int)
