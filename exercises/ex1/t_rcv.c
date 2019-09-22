@@ -132,8 +132,8 @@ int main()
                             FD_CLR(recv_s, &mask);
                             close(recv_s);
                             fclose(fw);
-                            break;
                             exit(0);
+                            break;
                         }
                     }
                     

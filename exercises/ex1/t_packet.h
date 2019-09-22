@@ -7,7 +7,7 @@
 
 #define FILENAME 0
 #define DATA 1
-#define END
+#define END 2
 
 struct t_packet {
 

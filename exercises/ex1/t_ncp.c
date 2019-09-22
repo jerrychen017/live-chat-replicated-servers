@@ -131,8 +131,9 @@ int main(int argc, char** argv)
         }
 
         if (last_packet) {
-            pakcet.tag = END;
+            packet.tag = END;
             ret = send( s, &packet, sizeof(packet), 0);
+            
             struct timeval end_time;
             gettimeofday(&end_time, NULL);
             struct timeval diff_time = diffTime(end_time, start_time);
