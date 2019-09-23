@@ -9,7 +9,7 @@ int main()
     int                recv_s;
     fd_set             mask;
     fd_set             read_mask;
-    long               on=1;
+    long               on = 1;
     int                num;
 
     s = socket(AF_INET, SOCK_STREAM, 0);
@@ -33,7 +33,6 @@ int main()
         exit(1);
     }
  
-    // TODO: change 4?
     if (listen(s, 4) < 0) {
         perror("T_rcv: listen");
         exit(1);
@@ -52,7 +51,12 @@ int main()
     struct timeval last_time;
     unsigned int bytes = 0;
 
-    int counter = 0;
+    bool first_packet = true;
+    int filename_len = 0;
+    int received_bytes = 0;
+
+    char buffer[MAX_PACKET_SIZE];
+
     for(;;)
     {
         read_mask = mask;
@@ -70,76 +74,55 @@ int main()
                 gettimeofday(&last_time, NULL);
             }
             if ( FD_ISSET(recv_s,&read_mask) ) {
-                if ( recv(recv_s,&packet,sizeof(packet),0) > 0) {
-                    
-                    switch (packet.tag) {
-
-                        case FILENAME:
-                        {
-                            char filename[packet.bytes + 1];
-                            memcpy(filename, packet.file, packet.bytes);
-                            filename[packet.bytes] = '\0';
-                            fw = fopen(filename, "w");
-                            if (fw == NULL) {
-                                perror("T_rcv: cannot open or create file for writing");
-                                exit(1);
-                            }
-                            busy = true;
-                            
-                            // record starting time
-                            gettimeofday(&start_time, NULL);
-                            gettimeofday(&last_time, NULL);
-
-                            printf("----------------START-----------------\n");
-                            printf("Start transfer file %s\n", filename);
-                            break;
-                        }
-
-                        case DATA:
-                        {
-                            unsigned int old_bytes = bytes;
-                            int bytes_written = fwrite(packet.file, 1, packet.bytes, fw);
-                            if (bytes_written != packet.bytes) {
-                                printf("Warning: write to file less than %d bytes", packet.bytes);
-                            }
-                            printf("#%d: receive bytes %d\n", ++counter, bytes_written);
-                            bytes += bytes_written;
-                            // report statistics every 100 MBytes
-                            if (old_bytes / 100000000 != bytes / 100000000) {
-                                struct timeval current_time;
-                                gettimeofday(&current_time, NULL);
-                                struct timeval diff_time = diffTime(current_time, last_time);
-                                double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
-                                printf("Report: total amount of data transferred is %u Mbytes\n", bytes / (1024 * 1024));
-                                printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) (100) * 8 / seconds);
-                                last_time = current_time;
-                            }
-                            break;
-                        }
-
-                        case END:
-                        {
-                            struct timeval end_time;
-                            gettimeofday(&end_time, NULL);
-                            struct timeval diff_time = diffTime(end_time, start_time);
-                            double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
-                            printf("Report: Size of file transferred is %.2f Mbytes\n", (double) bytes / (1024 * 1024));
-                            printf("        Amount of time spent is %.2f seconds\n", seconds);
-                            printf("        Average rate is %.2f Mbits/sec\n",
-                                    (double) bytes / (1024 * 1024) * 8 / seconds);
-                            printf("-----------------END------------------\n");
-
-                            FD_CLR(recv_s, &mask);
-                            close(recv_s);
-                            fclose(fw);
-                            exit(0);
-                            break;
-                        }
+                if (first_packet) {
+                    received_bytes = recv(recv_s, &filename_len, sizeof(int), 0);
+                    if (received_bytes != sizeof(int)) {
+                        printf("Warning: does NOT get the length of filename");
                     }
+                    char filename[filename_len + 1];
+                    received_bytes = recv(recv_s, &filename, filename_len, 0);
+                    if (received_bytes != filename_len) {
+                        printf("Warning: does NOT get the filename");
+                    }
+                    filename[filename_len] = '\0';
+                    printf("Start transfer file filename %s\n", filename);
+                    fw = fopen(filename, "w");
+                    if (fw == NULL) {
+                        perror("T_rcv: cannot open or create file for writing");
+                        exit(1);
+                    }
+                    busy = true;
+                    first_packet = false;        
+                    // record starting time
+                    gettimeofday(&start_time, NULL);
+                    gettimeofday(&last_time, NULL);
+
+                    printf("----------------START-----------------\n");
+                    printf("Start transfer file %s\n", filename);
+                
+                } else if ((received_bytes = recv(recv_s, &buffer, MAX_PACKET_SIZE, 0)) > 0) {
+                
+                    int bytes_written = fwrite(buffer, 1, received_bytes, fw);
+                    if (bytes_written != received_bytes) {
+                        printf("Warning: write to file less than %d bytes", packet.bytes);
+                    }
+                    
+                    unsigned int old_bytes = bytes;
+                    bytes += bytes_written;
+                    // report statistics every 100 MBytes
+                    if (old_bytes / 100000000 != bytes / 100000000) {
+                        struct timeval current_time;
+                        gettimeofday(&current_time, NULL);
+                        struct timeval diff_time = diffTime(current_time, last_time);
+                        double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
+                        printf("Report: total amount of data transferred is %u Mbytes\n", bytes / (1024 * 1024));
+                        printf("        average transfer rate of the last 100 Mbytes received is %.2f Mbits/sec\n", (double) (100) * 8 / seconds);
+                        last_time = current_time;
+                    } 
                     
                 }
                 else
-                {/*
+                {
                     struct timeval end_time;
                     gettimeofday(&end_time, NULL);
                     struct timeval diff_time = diffTime(end_time, start_time);
@@ -155,7 +138,7 @@ int main()
                     fclose(fw);
 
                     exit(0);
-                */
+                
                 }
             }
         }

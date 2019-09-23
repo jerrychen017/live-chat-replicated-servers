@@ -31,10 +31,10 @@ rcv.o: rcv.c sendto_dbg.h packet.h net_include.h tag.h helper.h
 helper.o: helper.c helper.h net_include.h
 		$(CC) $(CFLAGS) helper.c
 
-t_rcv.o: t_rcv.c net_include.h t_packet.h helper.h
+t_rcv.o: t_rcv.c net_include.h packet.h helper.h
 		$(CC) $(CFLAGS) t_rcv.c
 
-t_ncp.o: t_ncp.c net_include.h t_packet.h helper.h
+t_ncp.o: t_ncp.c net_include.h packet.h helper.h
 		$(CC) $(CFLAGS) t_ncp.c
 
 clean:

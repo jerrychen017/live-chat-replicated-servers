@@ -1,6 +1,6 @@
 #include "net_include.h"
-#include "t_packet.h"
 #include "helper.h"
+#include "packet.h"
 
 int main(int argc, char** argv)
 {
@@ -22,16 +22,22 @@ int main(int argc, char** argv)
     int comp_char_index = 0;
     bool has_at = false;
 
-    struct t_packet packet;
-    packet.tag = FILENAME;
+    char filename[MAX_PACKET_SIZE - sizeof(int)];
+    int filename_len;
 
     // parse filename and rcv name from command line
     for (int i = 0; i < strlen(temp); i++) {
         if ((!has_at) && temp[i] != '@') {
             // put filename to packet
-            packet.file[i] = temp[i];
+            filename[i] = temp[i];
             // record size of filename in packet
-            packet.bytes += sizeof(char);
+            filename_len++;
+
+            if (filename_len > MAX_PACKET_SIZE - sizeof(int)) {
+                printf("T_ncp: filename is too long\n");
+                exit(0);
+            }
+
         } else if ((!has_at) && temp[i] == '@') {
             has_at = true;
         } else if (has_at) {
@@ -42,6 +48,7 @@ int main(int argc, char** argv)
             comp_name[comp_char_index++] = temp[i];
         }
     }
+
     if (!has_at) {  // prompt error when there's no '@' in the argument
         perror("ncp invalid command: incorrect format in "
                 "<dest_file_name>@<comp_name>\n");
@@ -68,8 +75,7 @@ int main(int argc, char** argv)
     memcpy( &host.sin_addr, h_ent.h_addr_list[0],  sizeof(host.sin_addr) );
 
     ret = connect(s, (struct sockaddr *)&host, sizeof(host) ); /* Connect! */
-    if( ret < 0)
-    {
+    if (ret < 0) {
         perror( "T_ncp: could not connect to server"); 
         exit(1);
     }
@@ -78,10 +84,6 @@ int main(int argc, char** argv)
     struct timeval start_time;
     struct timeval last_time;
 
-    gettimeofday(&start_time, NULL);
-    gettimeofday(&last_time, NULL);
-    printf("\n----------------START-----------------\n");
-
     FILE* source_file;  // pointer to source file
     if ((source_file = fopen(argv[1], "r")) == NULL) {
         perror("ncp: fopen");
@@ -89,18 +91,29 @@ int main(int argc, char** argv)
     }
 
     // Send filename to rcv
-    ret = send( s, &packet, sizeof(packet), 0);
+    char buffer[PACKET_SIZE];
+    ret = send(s, &filename_len, sizeof(int), 0);
+    if (ret != sizeof(int)) {
+        printf("Warning: does NOT send filename_len\n");
+    }
+    ret = send(s, &filename, filename_len, 0);
+    
+    gettimeofday(&start_time, NULL);
+    gettimeofday(&last_time, NULL);
+    printf("----------------START-----------------\n");
+
+    printf("Start transfer file %s\n", filename);
+    if (ret != filename_len) {
+        printf("Warning: does NOT send filename\n");
+    }
 
     bool last_packet = false;
 
     unsigned int bytes = 0;
-    int counter = 0;
     for(;;)
     {
-        packet.tag = DATA;
-        packet.bytes = fread(packet.file, 1, BUF_SIZE, source_file);
-        printf("#%d: send bytes %d\n", ++counter, packet.bytes);
-        if (packet.bytes < BUF_SIZE) {
+        int read_bytes = fread(&buffer, 1, MAX_PACKET_SIZE, source_file);
+        if (read_bytes < MAX_PACKET_SIZE) {
             if (feof(source_file)) {  // when we reach the EOF
                 last_packet = true;
             } else {
@@ -109,15 +122,15 @@ int main(int argc, char** argv)
             }
         }
 
-        ret = send( s, &packet, sizeof(packet), 0);
-        if(ret != sizeof(packet))
+        ret = send( s, &buffer, read_bytes, 0);
+        if(ret != read_bytes)
         {
             perror( "T_ncp: error in writing");
             exit(1);
         }
 
         unsigned int old_bytes = bytes;
-        bytes += packet.bytes;
+        bytes += ret;
 
         // report statistics every 100 MBytes
         if (old_bytes / 100000000 != bytes / 100000000) {
@@ -131,8 +144,6 @@ int main(int argc, char** argv)
         }
 
         if (last_packet) {
-            packet.tag = END;
-            ret = send( s, &packet, sizeof(packet), 0);
             
             struct timeval end_time;
             gettimeofday(&end_time, NULL);
