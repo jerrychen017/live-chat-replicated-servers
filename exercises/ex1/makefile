@@ -42,3 +42,5 @@ clean:
 	rm ncp
 	rm rcv
 	rm test
+	rm t_ncp
+	rm t_rcv
