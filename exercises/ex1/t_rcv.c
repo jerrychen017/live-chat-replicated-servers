@@ -1,5 +1,5 @@
 #include "net_include.h"
-#include "t_packet.h"
+#include "packet.h"
 #include "helper.h"
 
 int main()
@@ -41,7 +41,6 @@ int main()
     FD_ZERO(&mask);
     FD_SET(s,&mask);
     
-    struct t_packet packet; 
     bool busy = false;
 
     FILE* fw;
@@ -104,7 +103,7 @@ int main()
                 
                     int bytes_written = fwrite(buffer, 1, received_bytes, fw);
                     if (bytes_written != received_bytes) {
-                        printf("Warning: write to file less than %d bytes", packet.bytes);
+                        printf("Warning: write to file is NOT received %d bytes", received_bytes);
                     }
                     
                     unsigned int old_bytes = bytes;

@@ -102,7 +102,7 @@ int main(int argc, char** argv)
     gettimeofday(&last_time, NULL);
     printf("----------------START-----------------\n");
 
-    printf("Start transfer file %s\n", filename);
+    printf("Start transfer file %s\n", argv[1]);
     if (ret != filename_len) {
         printf("Warning: does NOT send filename\n");
     }
