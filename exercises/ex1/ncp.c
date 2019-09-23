@@ -4,8 +4,6 @@
 #include "tag.h"
 #include "helper.h"
 
-// TODO: error checking each ugrad?
-// TODO: (low priority) when total_sent_bytes reaches 3 gigabytes, we change unit
 int main(int argc, char* argv[]) {
     // args error checking
     if (argc != 4) {
@@ -39,6 +37,10 @@ int main(int argc, char* argv[]) {
     // parse filename and rcv name from command line
     for (int i = 0; i < strlen(temp); i++) {
         if ((!has_at) && temp[i] != '@') {
+            if (i + 2 >= BUF_SIZE) {
+                perror("ncp: <source_file_name> is too long\n");
+                exit(1);
+            }
             // put filename to packet
             start_packet.file[i] = temp[i];
             // record size of filename in packet
