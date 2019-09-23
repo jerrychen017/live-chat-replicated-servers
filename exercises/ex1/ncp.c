@@ -37,8 +37,8 @@ int main(int argc, char* argv[]) {
     // parse filename and rcv name from command line
     for (int i = 0; i < strlen(temp); i++) {
         if ((!has_at) && temp[i] != '@') {
-            if (i + 2 >= BUF_SIZE) {
-                perror("ncp: <source_file_name> is too long\n");
+            if (i + 2 > BUF_SIZE) {
+                perror("ncp: <dest_file_name> is too long\n");
                 exit(1);
             }
             // put filename to packet
