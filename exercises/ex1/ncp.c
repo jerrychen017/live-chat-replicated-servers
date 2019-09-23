@@ -153,11 +153,30 @@ int main(int argc, char* argv[]) {
     // record starting time of transfer
     struct timeval start_time;
     struct timeval last_time;
+    unsigned int sent_num = 0;
+    unsigned int received_num = 0;
+    double loss_rate = 0;
+    __suseconds_t timeout_usec = NACK_INTERVAL_USEC;
 
     for (;;) {
+        // detects loss rate based on number of acks received by rcv
+        if (begin && sent_num != 0 && received_num != 0) {
+            loss_rate = (double)(sent_num - received_num) / sent_num;
+        if (loss_rate >= 0 && loss_rate <= 0.05) {
+            timeout_usec = 6000;
+        } else if (loss_rate > 0.05 && loss_rate <= 0.1) {
+          timeout_usec = 3000;
+        } else if (loss_rate > 0.1 && loss_rate <= 0.2) {
+          timeout_usec = 2000;
+        } else if (loss_rate > 0.2 && loss_rate <= 0.3) {
+          timeout_usec = 1000;
+        } else {
+          timeout_usec = 1000;
+        }
+      }
         read_mask = mask;
         timeout.tv_sec = NACK_INTERVAL_SEC;
-        timeout.tv_usec = NACK_INTERVAL_USEC;
+        timeout.tv_usec = timeout_usec;
         num = select(FD_SETSIZE, &read_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if (FD_ISSET(sk, &read_mask)) {
@@ -188,6 +207,7 @@ int main(int argc, char* argv[]) {
                             win[i].tag = NCP_FILE;
                             win[i].bytes = fread(win[i].file, 1, BUF_SIZE, source_file);
                             win[i].sequence = i;
+                            received_num++;
                             if (win[i].bytes < BUF_SIZE) {
                                 if (feof(source_file)) {  // when we reach the EOF
                                     win[i].tag = NCP_LAST;
@@ -207,6 +227,7 @@ int main(int argc, char* argv[]) {
 
                             sendto_dbg(sk, (char*)&win[i], sizeof(struct packet), 0,
                                                  (struct sockaddr*)&send_addr, sizeof(send_addr));
+                            sent_num++;
                         }
 
                         break;
@@ -246,7 +267,7 @@ int main(int argc, char* argv[]) {
                                 index = convert(cur, start_sequence, start_index);
                                 win[index].tag = NCP_FILE;
                                 win[index].bytes = fread(win[index].file, 1, BUF_SIZE, source_file);
-
+                                received_num++;
                                 win[index].sequence = cur;
                                 if (win[index].bytes < BUF_SIZE) {
                                     if (feof(source_file)) {
@@ -263,7 +284,7 @@ int main(int argc, char* argv[]) {
                                 sendto_dbg(sk, (char*)&win[index], sizeof(struct packet), 0,
                                         (struct sockaddr*)&send_addr, sizeof(send_addr));
                             
-
+                                sent_num++;
                             }
                         }
 
@@ -277,6 +298,7 @@ int main(int argc, char* argv[]) {
                                 }
                                 sendto_dbg(sk, (char*)&win[convert(nack_sequence, start_sequence, start_index)],
                                     sizeof(struct packet), 0, (struct sockaddr*)&send_addr, sizeof(send_addr));
+                                sent_num++;
                             }
                         }
 
@@ -332,6 +354,7 @@ int main(int argc, char* argv[]) {
                 if (!begin) {
                     sendto_dbg(sk, (char*)&start_packet, sizeof(struct packet), 0,
                                          (struct sockaddr*)&send_addr, sizeof(send_addr));
+                    sent_num++; 
                 }
             }
         } else {
@@ -344,6 +367,7 @@ int main(int argc, char* argv[]) {
                         (htonl(send_addr.sin_addr.s_addr) & 0x000000ff));
                 sendto_dbg(sk, (char*)&start_packet, sizeof(struct packet), 0,
                                      (struct sockaddr*)&send_addr, sizeof(send_addr));
+                sent_num++; 
 
             } else {
                 unsigned int last;
@@ -356,6 +380,7 @@ int main(int argc, char* argv[]) {
                 // retransmit LAST packet in the window
                 sendto_dbg(sk, (char*)&win[convert(last, start_sequence, start_index)], sizeof(struct packet), 0,
                                      (struct sockaddr*)&send_addr, sizeof(send_addr));
+                sent_num++;
             }
             fflush(0);
         }
