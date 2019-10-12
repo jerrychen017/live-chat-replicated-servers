@@ -1,0 +1,127 @@
+#define MAX_PACKET_SIZE 1400
+#define WINDOW_SIZE 1500
+#define PACKET_SIZE MAX_PACKET_SIZE
+#define BUF_SIZE PACKET_SIZE - 3 * sizeof(unsigned int)
+#define MAX_NUMS_NACK \
+  (PACKET_SIZE - 3 * sizeof(unsigned int)) / sizeof(unsigned int)
+#define NACK_SIZE 50
+#define PORT 10100
+#define NACK_INTERVAL_SEC 0
+#define NACK_INTERVAL_USEC 125000
+
+-----------------START------------------
+Report: total amount of data transferred is 95 Mbytes
+        average transfer rate of the last 100 Mbytes received is 112.99 Mbits/sec
+Report: total amount of data transferred is 191 Mbytes
+        average transfer rate of the last 100 Mbytes received is 115.77 Mbits/sec
+Report: total amount of data transferred is 286 Mbytes
+        average transfer rate of the last 100 Mbytes received is 100.29 Mbits/sec
+Report: total amount of data transferred is 381 Mbytes
+        average transfer rate of the last 100 Mbytes received is 92.82 Mbits/sec
+Report: total amount of data transferred is 476 Mbytes
+        average transfer rate of the last 100 Mbytes received is 98.23 Mbits/sec
+Report: total amount of data transferred is 572 Mbytes
+        average transfer rate of the last 100 Mbytes received is 115.42 Mbits/sec
+Report: total amount of data transferred is 667 Mbytes
+        average transfer rate of the last 100 Mbytes received is 96.73 Mbits/sec
+Report: total amount of data transferred is 763 Mbytes
+        average transfer rate of the last 100 Mbytes received is 101.08 Mbits/sec
+Report: total amount of data transferred is 858 Mbytes
+        average transfer rate of the last 100 Mbytes received is 108.45 Mbits/sec
+Report: total amount of data transferred is 953 Mbytes
+        average transfer rate of the last 100 Mbytes received is 105.04 Mbits/sec
+Finish trasnferring file with receiver (128.220.224.76)
+Report: Size of file transferred is 1000.00 Mbytes
+        Amount of time spent is 82.67 seconds
+        Average rate is 96.77 Mbits/sec
+------------------END-------------------
+
+#define MAX_PACKET_SIZE 1400
+#define WINDOW_SIZE 1500
+#define PACKET_SIZE MAX_PACKET_SIZE
+#define BUF_SIZE PACKET_SIZE - 3 * sizeof(unsigned int)
+#define MAX_NUMS_NACK \
+  (PACKET_SIZE - 3 * sizeof(unsigned int)) / sizeof(unsigned int)
+#define NACK_SIZE 50
+
+-----------------START------------------
+Report: total amount of data transferred is 96 Mbytes
+        average transfer rate of the last 100 Mbytes received is 44.86 Mbits/sec
+Report: total amount of data transferred is 191 Mbytes
+        average transfer rate of the last 100 Mbytes received is 58.07 Mbits/sec
+Report: total amount of data transferred is 286 Mbytes
+        average transfer rate of the last 100 Mbytes received is 69.70 Mbits/sec
+Report: total amount of data transferred is 381 Mbytes
+        average transfer rate of the last 100 Mbytes received is 64.49 Mbits/sec
+Report: total amount of data transferred is 476 Mbytes
+        average transfer rate of the last 100 Mbytes received is 54.85 Mbits/sec
+Report: total amount of data transferred is 572 Mbytes
+        average transfer rate of the last 100 Mbytes received is 59.77 Mbits/sec
+Report: total amount of data transferred is 668 Mbytes
+        average transfer rate of the last 100 Mbytes received is 67.58 Mbits/sec
+Report: total amount of data transferred is 763 Mbytes
+        average transfer rate of the last 100 Mbytes received is 64.15 Mbits/sec
+Report: total amount of data transferred is 858 Mbytes
+        average transfer rate of the last 100 Mbytes received is 54.03 Mbits/sec
+Report: total amount of data transferred is 953 Mbytes
+        average transfer rate of the last 100 Mbytes received is 59.80 Mbits/sec
+Finish trasnferring file with receiver (128.220.224.76)
+Report: Size of file transferred is 1000.00 Mbytes
+        Amount of time spent is 141.54 seconds
+        Average rate is 56.52 Mbits/sec
+------------------END-------------------
+
+
+
+#define PORT 10100
+#define NACK_INTERVAL_SEC 0
+#define NACK_INTERVAL_USEC 65000
+-----------------START------------------
+Report: total amount of data transferred is 95 Mbytes
+        average transfer rate of the last 100 Mbytes received is 117.58 Mbits/sec
+Report: total amount of data transferred is 191 Mbytes
+        average transfer rate of the last 100 Mbytes received is 124.69 Mbits/sec
+Report: total amount of data transferred is 286 Mbytes
+        average transfer rate of the last 100 Mbytes received is 115.38 Mbits/sec
+Report: total amount of data transferred is 381 Mbytes
+        average transfer rate of the last 100 Mbytes received is 118.07 Mbits/sec
+Report: total amount of data transferred is 477 Mbytes
+        average transfer rate of the last 100 Mbytes received is 116.04 Mbits/sec
+Report: total amount of data transferred is 572 Mbytes
+        average transfer rate of the last 100 Mbytes received is 111.13 Mbits/sec
+Report: total amount of data transferred is 667 Mbytes
+        average transfer rate of the last 100 Mbytes received is 100.89 Mbits/sec
+Report: total amount of data transferred is 762 Mbytes
+        average transfer rate of the last 100 Mbytes received is 107.61 Mbits/sec
+Report: total amount of data transferred is 858 Mbytes
+        average transfer rate of the last 100 Mbytes received is 108.28 Mbits/sec
+Report: total amount of data transferred is 953 Mbytes
+        average transfer rate of the last 100 Mbytes received is 108.43 Mbits/sec
+Finish trasnferring file with receiver (128.220.224.76)
+Report: Size of file transferred is 1000.00 Mbytes
+        Amount of time spent is 74.38 seconds
+        Average rate is 107.56 Mbits/sec
+------------------END-------------------
+
+ROUNDTRIP 18161
+
+
+
+
+
+#define PORT 10100
+#define NACK_INTERVAL_SEC 0
+#define NACK_INTERVAL_USEC 15000 - optimal for zero loss
+
+#define PORT 10100
+#define NACK_INTERVAL_SEC 0
+#define NACK_INTERVAL_USEC (4000 - 6000) - 5 percent loss
+
+#define NACK_INTERVAL_USEC (2000) - 10 percent loss
+
+#define NACK_INTERVAL_USEC (2000) - 20 percent loss
+
+#define NACK_INTERVAL_USEC (1000) - 30 percent loss
+
+
+
