@@ -1,4 +1,6 @@
 #include "net_include.h"
+#include "packet.h"
+#include <stdbool.h>
 
 int main() {
 
@@ -54,11 +56,25 @@ int main() {
     timeout.tv_sec = 0;
     timeout.tv_usec = 20000;
 
+    bool start = false; 
+    int bytes_received; 
+    struct packet received_packet; 
     for(;;) {
         temp_mask = mask;
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if ( FD_ISSET( sk, &temp_mask) ) {
+                if (!start) { 
+                    bytes_received = recv( sk, &received_packet, sizeof(struct packet), 0 );
+                    if (bytes_received != sizeof(struct packet)) {
+                        printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
+                    }
+                    
+                    start = true; 
+                    printf("I got start packet!");
+                } else {
+                    break;
+                }
                 
             } else {
                 // timeout
