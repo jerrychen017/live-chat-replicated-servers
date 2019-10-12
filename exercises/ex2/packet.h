@@ -16,8 +16,8 @@
 struct packet {
     unsigned int tag;
     unsigned int counter;
-    unsigned int machine_index;
-    unsigned int packet_index;
+    unsigned int machine_index; // starts from 1
+    unsigned int packet_index; // starts from 1
     unsigned int random_data;
     /*
     if tag == TAG_ACK, first <num_machine> integers represents corresponding ack value
