@@ -1,6 +1,7 @@
+#include <stdbool.h>
 #include "net_include.h"
 #include "packet.h"
-#include <stdbool.h>
+#include "helper.h"
 
 int main(int argc, char* argv[]) {
     // TODO: error checking on atoi 
@@ -99,6 +100,16 @@ int main(int argc, char* argv[]) {
 
     struct packet table[num_machines][WINDOW_SIZE];
 
+    /* To store received packet in the array for each machine
+    *  the index of the actual first entry
+    */
+    int start_array_indices[num_machines];
+    memset(start_array_indices, 0, num_machines * sizeof(int)); // initializing start_array_indices
+
+    // corresponding packet index for each start array index
+    int start_packet_indices[num_machines];
+    memset(start_packet_indices, 0, num_machines * sizeof(int)); // initializing start_packet_indices
+
     int last_delivered_indices[num_machines];
     memset(last_delivered_indices, 0, num_machines * sizeof(int)); // initializing last_delivered indices
     
@@ -150,7 +161,8 @@ int main(int argc, char* argv[]) {
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if ( FD_ISSET( sr, &temp_mask) ) {
-                bytes_received = recv_dbg( sr, &received_packet, sizeof(struct packet), 0 );                
+                // TODO: change to recv_dbg
+                bytes_received = recv( sr, &received_packet, sizeof(struct packet), 0 );                
                 if (bytes_received != sizeof(struct packet)) {
                     printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
                 }
@@ -164,6 +176,9 @@ int main(int argc, char* argv[]) {
 
                     case TAG_DATA:
                     {
+                        // insert packet to table
+                        int insert_index = convert(received_packet.packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
+                        memcpy(&table[received_packet.machine_index - 1][insert_index], &received_packet, sizeof(struct packet));
                         break;
                     }
 
