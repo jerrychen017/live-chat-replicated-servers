@@ -4,10 +4,9 @@
 
 int main() {
 
-    // create socket for both sending and receiving
     struct sockaddr_in my_address;
-    int sk = socket(AF_INET, SOCK_DGRAM, 0); /* socket */
-    if (sk<0) {
+    int sr = socket(AF_INET, SOCK_DGRAM, 0); /* socket */
+    if (sr<0) {
         perror("Mcast: socket");
         exit(1);
     }
@@ -16,7 +15,7 @@ int main() {
     my_address.sin_addr.s_addr = INADDR_ANY;
     my_address.sin_port = htons(PORT);
 
-    if ( bind( sk, (struct sockaddr *)&my_address, sizeof(my_address) ) < 0 ) {
+    if ( bind( sr, (struct sockaddr *)&my_address, sizeof(my_address) ) < 0 ) {
         perror("Mcast: bind");
         exit(1);
     }
@@ -27,14 +26,20 @@ int main() {
     /* the interface could be changed to a specific interface if needed */
     mreq.imr_interface.s_addr = htonl( INADDR_ANY );
 
-    // join multicast group
-    if (setsockopt(sk, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void *)&mreq, 
+    // sr joins multicast group
+    if (setsockopt(sr, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void *)&mreq, 
         sizeof(mreq)) < 0) {
         perror("Mcast: problem in setsockopt to join multicast address" );
     }
 
+    int ss = socket(AF_INET, SOCK_DGRAM, 0); /* Socket for sending */
+    if (ss<0) {
+        perror("Mcast: socket");
+        exit(1);
+    }
+
     unsigned char ttl_val = 1;
-    if (setsockopt(sk, IPPROTO_IP, IP_MULTICAST_TTL, (void *)&ttl_val, 
+    if (setsockopt(ss, IPPROTO_IP, IP_MULTICAST_TTL, (void *)&ttl_val, 
         sizeof(ttl_val)) < 0) {
         printf("Mcast: problem in setsockopt of multicast ttl %d - ignore in WinNT or Win95\n", ttl_val );
     }
@@ -50,7 +55,7 @@ int main() {
 
     FD_ZERO( &mask );
     FD_ZERO( &dummy_mask );
-    FD_SET( sk, &mask );
+    FD_SET( sr, &mask );
 
     struct timeval timeout;
     timeout.tv_sec = 0;
@@ -62,10 +67,11 @@ int main() {
     for(;;) {
         temp_mask = mask;
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
+        //printf("Num is %d\n", num);
         if (num > 0) {
-            if ( FD_ISSET( sk, &temp_mask) ) {
+            if ( FD_ISSET( sr, &temp_mask) ) {
                 if (!start) { 
-                    bytes_received = recv( sk, &received_packet, sizeof(struct packet), 0 );
+                    bytes_received = recv( sr, &received_packet, sizeof(struct packet), 0 );
                     if (bytes_received != sizeof(struct packet)) {
                         printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
                     }
