@@ -99,6 +99,12 @@ int main(int argc, char* argv[]) {
     memset(acks, 0, num_machines * sizeof(int)); // initializing acks
 
     struct packet table[num_machines][WINDOW_SIZE];
+    // initialize table entries to packets with empty tag
+    for (int i = 0; i < num_machines; i++) {
+        for (int j = 0; j < WINDOW_SIZE; j++) {
+            table[i][j].tag = TAG_EMPTY;
+        }
+    }
 
     /* To store received packet in the array for each machine
     *  the index of the actual first entry
@@ -108,7 +114,7 @@ int main(int argc, char* argv[]) {
 
     // corresponding packet index for each start array index
     int start_packet_indices[num_machines];
-    memset(start_packet_indices, 0, num_machines * sizeof(int)); // initializing start_packet_indices
+    memset(start_packet_indices, 1, num_machines * sizeof(int)); // initializing start_packet_indices
 
     int last_delivered_indices[num_machines];
     memset(last_delivered_indices, 0, num_machines * sizeof(int)); // initializing last_delivered indices
@@ -122,6 +128,7 @@ int main(int argc, char* argv[]) {
     memset(finished, false, num_machines * sizeof(bool)); 
 
     int counter = 0; 
+    int last_delivered_counter = 0;
 
     // Receive START packet
     bytes_received = recv( sr, &received_packet, sizeof(struct packet), 0 );
@@ -130,18 +137,17 @@ int main(int argc, char* argv[]) {
     }
 
     // initialize created_packets
-    int i = 0;
-    while (acks[machine_index - 1] < num_packets && i < WINDOW_SIZE) {
-        created_packets[i].tag = TAG_DATA;
+    int num_created = 0;
+    while (num_created < num_packets && num_created < WINDOW_SIZE) {
+        created_packets[num_created].tag = TAG_DATA;
         counter++;
-        created_packets[i].counter = counter;
-        created_packets[i].machine_index = machine_index;
-        acks[machine_index - 1]++;
-        created_packets[i].packet_index = acks[machine_index - 1];
-        created_packets[i].random_data = (rand() % 999999) + 1;
-        i++;
-        sendto( ss, &created_packets[i], sizeof(struct packet), 0, 
+        created_packets[num_created].counter = counter;
+        created_packets[num_created].machine_index = machine_index;
+        created_packets[num_created].packet_index = num_created + 1;
+        created_packets[num_created].random_data = (rand() % 999999) + 1;
+        sendto( ss, &created_packets[num_created], sizeof(struct packet), 0, 
             (struct sockaddr *)&send_addr, sizeof(send_addr) );
+        num_created++;
     }
 
     struct packet end_packet;
@@ -150,11 +156,17 @@ int main(int argc, char* argv[]) {
     // put last packet_index
     end_packet.packet_index = num_packets;
 
-    if (acks[machine_index - 1] == num_packets) {
+    if (num_created == num_packets) {
         sendto(ss, &end_packet, sizeof(struct packet), 0,
             (struct sockaddr *)&send_addr, sizeof(send_addr) );
     }
 
+    // file pointer for writing
+    FILE *fd;
+    char filename[7];
+    filename[6] = '\0';
+    sprintf(filename, "%d.out", machine_index);
+    fd = fopen(filename, "w");
 
     for(;;) {
         temp_mask = mask;
@@ -178,7 +190,125 @@ int main(int argc, char* argv[]) {
                     {
                         // insert packet to table
                         int insert_index = convert(received_packet.packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
-                        memcpy(&table[received_packet.machine_index - 1][insert_index], &received_packet, sizeof(struct packet));
+                        // checks if the target spot is occupied
+                        if (table[received_packet.machine_index - 1][insert_index].tag != TAG_EMPTY) {
+                            memcpy(&table[received_packet.machine_index - 1][insert_index], &received_packet, sizeof(struct packet));
+                        }
+
+                    
+                        // try to deliver packets
+                        bool is_full = true; 
+                        struct packet nack_packet;
+                        nack_packet.tag = TAG_NACK; 
+                        nack_packet.machine_index = machine_index; 
+                        while(is_full) {
+                            bool deliverable[num_machines]; 
+                            memset(start_array_indices, false, num_machines * sizeof(bool));
+                            for (int i = 0; i < num_machines; i++) {
+                                if (finished[i]) { // skips this machine if it has already ended
+                                    continue; 
+                                }
+                                if (i != machine_index - 1) {
+                                    if (table[i][start_array_indices[i]].tag != TAG_EMPTY) {
+                                        deliverable[i] = (table[i][start_array_indices[i]].counter == last_delivered_counter + 1);
+                                        nack_packet.payload[i] = -1; 
+                                    } else {
+                                        deliverable[i] = false; 
+                                        is_full = false; 
+                                        nack_packet.payload[i] = start_packet_indices[i]; 
+                                    }
+                                } else { // my machine case 
+                                    deliverable[i] = true; 
+                                }
+                            }
+                            if (is_full) {
+                                // deliver
+                                for (int i = 0; i < num_machines; i++) {
+                                    if (finished[i]) { // skips this machine if it has already ended
+                                        continue; 
+                                    }
+                                    if (deliverable[i]) {
+                                        if (i + 1 == machine_index) {
+                                            fprintf(fd, "%2d, %8d, %8d\n", machine_index, start_packet_indices[i], created_packets[start_array_indices[i]].random_data);
+                                            // update my ack
+                                            acks[i]++; 
+                                            
+                                            // TODO: how to end?!!!
+
+
+                                            int min = acks[0]; 
+                                            for (int j = 0; j < num_machines; j++) {
+                                                if (acks[j] < min) {
+                                                    min = acks[j];
+                                                }
+                                            }
+                                            if (min >= start_packet_indices[i]) {
+
+                                                // create new packet
+                                                created_packets[start_array_indices[i]].tag = TAG_DATA;
+                                                counter++;
+                                                created_packets[start_array_indices[i]].counter = counter;
+                                                created_packets[start_array_indices[i]].machine_index = machine_index;
+                                                created_packets[start_array_indices[i]].packet_index = num_created + 1;
+                                                num_created++;
+                                                created_packets[start_array_indices[i]].random_data = (rand() % 999999) + 1;
+
+                                                sendto( ss, &created_packets[start_array_indices[i]], sizeof(struct packet), 0, 
+                                                    (struct sockaddr *)&send_addr, sizeof(send_addr) );
+
+                                                if (num_created == num_packets) {
+                                                    sendto(ss, &end_packet, sizeof(struct packet), 0,
+                                                        (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                                }
+
+                                                // slide window
+                                                start_array_indices[i] = (start_array_indices[i] + 1) % WINDOW_SIZE;
+                                                start_packet_indices[i]++; 
+
+                                            }
+
+                                            
+                                        } else {
+                                            if (i + 1 != table[i][start_array_indices[i]].machine_index) {
+                                                printf("Warning: variable i doesn't match with the machine index in the table\n");
+                                            }
+                                            if (start_packet_indices[i] != table[i][start_array_indices[i]].packet_index) {
+                                                printf("Warning: packet index doesn't match\n");
+                                            }
+                                            fprintf(fd, "%2d, %8d, %8d\n", i + 1, start_packet_indices[i], table[i][start_array_indices[i]].random_data); 
+
+                                            // check if the machine has finished. update the finished array if yes. 
+                                            if (end_indices[i] != -1 && start_packet_indices[i] == end_indices[i]) { // finished 
+                                                finished[i] = true; 
+                                            }
+                                            // discard delivered packet in table
+                                            table[i][start_array_indices[i]].tag = TAG_EMPTY;
+                                            start_array_indices[i] = (start_array_indices[i] + 1) % WINDOW_SIZE;
+                                            start_packet_indices[i]++;  
+                                        }           
+                                        
+
+
+                                    }
+                                }
+                            }
+                        } // end of while loop 
+                        
+
+                        
+                        /*
+                        while (full start array indices) {
+                            deliver
+                        }
+                        send nack
+                        */
+
+
+
+                    
+                    
+
+
                         break;
                     }
 
@@ -189,6 +319,7 @@ int main(int argc, char* argv[]) {
 
                     case TAG_NACK:
                     {
+                        // TODO: try sending using unicast 
                         break;
                     }
 
