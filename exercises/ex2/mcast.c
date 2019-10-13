@@ -2,6 +2,7 @@
 #include "net_include.h"
 #include "packet.h"
 #include "helper.h"
+#include "recv_dbg.h"
 
 int main(int argc, char* argv[]) {
     // TODO: error checking on atoi 
@@ -173,8 +174,7 @@ int main(int argc, char* argv[]) {
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if ( FD_ISSET( sr, &temp_mask) ) {
-                // TODO: change to recv_dbg
-                bytes_received = recv( sr, &received_packet, sizeof(struct packet), 0 );                
+                bytes_received = recv_dbg( sr, &received_packet, sizeof(struct packet), 0 );                
                 if (bytes_received != sizeof(struct packet)) {
                     printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
                 }
@@ -294,6 +294,7 @@ int main(int argc, char* argv[]) {
                             }
                         } // end of while loop 
                         
+                        // send nack
 
                         
                         /*
