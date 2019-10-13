@@ -33,6 +33,8 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
+    recv_dbg_init(loss_rate, machine_index);
+
     struct sockaddr_in my_address;
     int sr = socket(AF_INET, SOCK_DGRAM, 0); /* socket */
     if (sr<0) {
@@ -133,6 +135,7 @@ int main(int argc, char* argv[]) {
 
     // Receive START packet
     bytes_received = recv( sr, &received_packet, sizeof(struct packet), 0 );
+    printf("Receive START pakcet\n");
     if (bytes_received != sizeof(struct packet)) {
         printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
     }
@@ -179,6 +182,7 @@ int main(int argc, char* argv[]) {
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if ( FD_ISSET( sr, &temp_mask) ) {
+                printf("I got a packet\n");
                 bytes_received = recv_dbg( sr, (char *) &received_packet, sizeof(struct packet), 0 );                
                 if (bytes_received != sizeof(struct packet)) {
                     printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
@@ -194,6 +198,10 @@ int main(int argc, char* argv[]) {
 
                     case TAG_DATA:
                     {
+                        printf("curretn ack\n");
+                        for (int i = 0; i < num_machines; i++) {
+                            printf("machine %d: %d, ", i + 1, acks[i]);
+                        }
                         // insert packet to table
                         int insert_index = convert(received_packet.packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
                         // checks if the target spot is occupied
@@ -249,7 +257,8 @@ int main(int argc, char* argv[]) {
                                             if (min - start_packet_indices[i] > 1) {
                                                 printf("Warning: min(ack) increase more than one after delivering my packet\n");
                                             }
-                                            if (min >= start_packet_indices[i]) {
+
+                                            if (min >= start_packet_indices[i] && num_created < num_packets) {
 
                                                 // create new packet
                                                 created_packets[start_array_indices[i]].tag = TAG_DATA;
