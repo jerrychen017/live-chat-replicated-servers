@@ -11,4 +11,10 @@ struct timeval diffTime(struct timeval left, struct timeval right);
  */
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
+/* Known end condition:
+*  1. Other machines have received all my packets (min(ack) == num_packets)
+*  2. Deliver all packets from other machines
+*/
+void check_end(int *acks, bool *finished, int num_machines, int machine_index, int num_packets);
+
 #endif

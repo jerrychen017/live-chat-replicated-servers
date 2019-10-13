@@ -21,7 +21,7 @@ struct packet {
     /*
     if tag == TAG_ACK, first <num_machine> integers represent corresponding ack value
     if tag == TAG_NACK, first <num_machine> integers represent corresponding nack packet_index. 
-    If the value is -1, then there's no nack for that machine. 
+    if the value is -1, then there's no nack for that machine.
     */
     int payload[1400 / sizeof(int)];
 };

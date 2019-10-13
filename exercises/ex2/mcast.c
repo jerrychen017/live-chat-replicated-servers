@@ -174,12 +174,13 @@ int main(int argc, char* argv[]) {
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if ( FD_ISSET( sr, &temp_mask) ) {
-                bytes_received = recv_dbg( sr, &received_packet, sizeof(struct packet), 0 );                
+                bytes_received = recv_dbg( sr, (char *) &received_packet, sizeof(struct packet), 0 );                
                 if (bytes_received != sizeof(struct packet)) {
                     printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
                 }
 
                 switch (received_packet.tag) {
+
                     case TAG_START:
                     {
                         printf("Warning: receive START packet in the middle of delivery");
@@ -206,9 +207,10 @@ int main(int argc, char* argv[]) {
                             memset(start_array_indices, false, num_machines * sizeof(bool));
                             for (int i = 0; i < num_machines; i++) {
                                 if (finished[i]) { // skips this machine if it has already ended
+                                    nack_packet.payload[i] = -1; 
                                     continue; 
                                 }
-                                if (i != machine_index - 1) {
+                                if (i != machine_index - 1) { // other machine case
                                     if (table[i][start_array_indices[i]].tag != TAG_EMPTY) {
                                         deliverable[i] = (table[i][start_array_indices[i]].counter == last_delivered_counter + 1);
                                         nack_packet.payload[i] = -1; 
@@ -228,19 +230,22 @@ int main(int argc, char* argv[]) {
                                         continue; 
                                     }
                                     if (deliverable[i]) {
-                                        if (i + 1 == machine_index) {
+                                        if (i + 1 == machine_index) { // my machine case
                                             fprintf(fd, "%2d, %8d, %8d\n", machine_index, start_packet_indices[i], created_packets[start_array_indices[i]].random_data);
-                                            // update my ack
-                                            acks[i]++; 
+                                            // update my ack, which represents delivered upto 
+                                            acks[i]++;
                                             
-                                            // TODO: how to end?!!!
-
+                                            // TODO: how to end?
+                                            check_end(acks, finished, num_machines, machine_index, num_packets);
 
                                             int min = acks[0]; 
                                             for (int j = 0; j < num_machines; j++) {
                                                 if (acks[j] < min) {
                                                     min = acks[j];
                                                 }
+                                            }
+                                            if (min - start_packet_indices[i] > 1) {
+                                                printf("Warning: min(ack) increase more than one after delivering my packet\n");
                                             }
                                             if (min >= start_packet_indices[i]) {
 
@@ -266,9 +271,8 @@ int main(int argc, char* argv[]) {
                                                 start_packet_indices[i]++; 
 
                                             }
-
                                             
-                                        } else {
+                                        } else { // other machine case
                                             if (i + 1 != table[i][start_array_indices[i]].machine_index) {
                                                 printf("Warning: variable i doesn't match with the machine index in the table\n");
                                             }
@@ -279,36 +283,35 @@ int main(int argc, char* argv[]) {
 
                                             // check if the machine has finished. update the finished array if yes. 
                                             if (end_indices[i] != -1 && start_packet_indices[i] == end_indices[i]) { // finished 
-                                                finished[i] = true; 
+                                                finished[i] = true;
+                                                // TODO: how to end?
+                                                check_end(acks, finished, num_machines, machine_index, num_packets);
+                                            } else {
+                                                // discard delivered packet in table
+                                                table[i][start_array_indices[i]].tag = TAG_EMPTY;
+                                                start_array_indices[i] = (start_array_indices[i] + 1) % WINDOW_SIZE;
+                                                start_packet_indices[i]++;
                                             }
-                                            // discard delivered packet in table
-                                            table[i][start_array_indices[i]].tag = TAG_EMPTY;
-                                            start_array_indices[i] = (start_array_indices[i] + 1) % WINDOW_SIZE;
-                                            start_packet_indices[i]++;  
-                                        }           
-                                        
-
-
+                                            
+                                        } // end of 
                                     }
-                                }
+                                } // end of deliver for loop  
+                            } else { // not full, we have missing packets, send nack
+                                sendto(ss, &nack_packet, sizeof(struct packet), 0,
+                                    (struct sockaddr *)&send_addr, sizeof(send_addr) );
                             }
                         } // end of while loop 
                         
-                        // send nack
-
-                        
-                        /*
-                        while (full start array indices) {
-                            deliver
+                        // send ack
+                        struct packet ack_packet; 
+                        ack_packet.tag = TAG_ACK; 
+                        ack_packet.machine_index = machine_index;
+                        for (int i = 0; i < num_machines; i++) {
+                            ack_packet.payload[i] = start_packet_indices[i] - 1;
                         }
-                        send nack
-                        */
-
-
-
-                    
-                    
-
+                        sendto(ss, &ack_packet, sizeof(struct packet), 0,
+                                    (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                         
 
                         break;
                     }
