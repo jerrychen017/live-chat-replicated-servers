@@ -162,6 +162,11 @@ int main(int argc, char* argv[]) {
             (struct sockaddr *)&send_addr, sizeof(send_addr) );
     }
 
+    struct packet nack_packet;
+    nack_packet.tag = TAG_NACK;
+    nack_packet.machine_index = machine_index;
+    memset(nack_packet.payload, -1, num_machines * sizeof(int));
+
     // file pointer for writing
     FILE *fd;
     char filename[7];
@@ -199,9 +204,6 @@ int main(int argc, char* argv[]) {
                     
                         // try to deliver packets
                         bool is_full = true; 
-                        struct packet nack_packet;
-                        nack_packet.tag = TAG_NACK; 
-                        nack_packet.machine_index = machine_index; 
                         while(is_full) {
                             bool deliverable[num_machines]; 
                             memset(start_array_indices, false, num_machines * sizeof(bool));
@@ -236,7 +238,7 @@ int main(int argc, char* argv[]) {
                                             acks[i]++;
                                             
                                             // TODO: how to end?
-                                            check_end(acks, finished, num_machines, machine_index, num_packets);
+                                            check_end(fd, acks, finished, num_machines, machine_index, num_packets);
 
                                             int min = acks[0]; 
                                             for (int j = 0; j < num_machines; j++) {
@@ -285,7 +287,7 @@ int main(int argc, char* argv[]) {
                                             if (end_indices[i] != -1 && start_packet_indices[i] == end_indices[i]) { // finished 
                                                 finished[i] = true;
                                                 // TODO: how to end?
-                                                check_end(acks, finished, num_machines, machine_index, num_packets);
+                                                check_end(fd, acks, finished, num_machines, machine_index, num_packets);
                                             } else {
                                                 // discard delivered packet in table
                                                 table[i][start_array_indices[i]].tag = TAG_EMPTY;
@@ -310,32 +312,79 @@ int main(int argc, char* argv[]) {
                             ack_packet.payload[i] = start_packet_indices[i] - 1;
                         }
                         sendto(ss, &ack_packet, sizeof(struct packet), 0,
-                                    (struct sockaddr *)&send_addr, sizeof(send_addr) );
-                         
-
+                            (struct sockaddr *)&send_addr, sizeof(send_addr) );
                         break;
                     }
 
                     case TAG_ACK:
                     {
+                        acks[received_packet.machine_index - 1] = received_packet.payload[machine_index - 1];
+                        // TODO: how to end?!!!!
+                        check_end(fd, acks, finished, num_machines, machine_index, num_packets);
                         break;
                     }
 
                     case TAG_NACK:
                     {
+                        for (int i = 0; i < num_machines; i++) {
+                            int requested_packet_index = received_packet.payload[i];
+                            if (requested_packet_index != -1) {
+                                if (requested_packet_index > start_packet_indices[machine_index - 1] + WINDOW_SIZE - 1) {
+                                    continue;
+                                }
+                                if (i == machine_index - 1) { // my machine case
+                                    if (requested_packet_index == num_packets + 1) {
+                                        sendto(ss, &end_packet, sizeof(struct packet), 0,
+                                        (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                    } else {
+                                        int index = convert(requested_packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
+                                        sendto(ss, &created_packets[index], sizeof(struct packet), 0,
+                                            (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                    }
+                                } else { // other machine case
+                                    // TODO: help other machines send end packet index
+                                    int index = convert(requested_packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
+                                    if (table[i][index].tag != TAG_EMPTY) {
+                                        sendto(ss, &table[i][index], sizeof(struct packet), 0,
+                                            (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                    }
+                                }
+                            }
+                        }
                         // TODO: try sending using unicast 
                         break;
                     }
 
                     case TAG_END:
                     {
+                        end_indices[received_packet.machine_index - 1] = received_packet.packet_index;
                         break;
                     }
                 }
 
             } else {
                 // timeout
+                // send ack
+                struct packet ack_packet; 
+                ack_packet.tag = TAG_ACK; 
+                ack_packet.machine_index = machine_index;
+                for (int i = 0; i < num_machines; i++) {
+                    ack_packet.payload[i] = start_packet_indices[i] - 1;
+                }
+                sendto(ss, &ack_packet, sizeof(struct packet), 0,
+                    (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
 
+                bool all_negative = true;
+                for (int i = 0; i < num_machines; i++) {
+                    if (nack_packet.payload[i] != -1) {
+                        all_negative = false;
+                        break;
+                    }
+                }
+                if (!all_negative) {
+                    sendto(ss, &nack_packet, sizeof(struct packet), 0,
+                        (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
+                }   
             }
         }
     }

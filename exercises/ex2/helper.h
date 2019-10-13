@@ -15,6 +15,6 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigne
 *  1. Other machines have received all my packets (min(ack) == num_packets)
 *  2. Deliver all packets from other machines
 */
-void check_end(int *acks, bool *finished, int num_machines, int machine_index, int num_packets);
+void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machine_index, int num_packets);
 
 #endif
