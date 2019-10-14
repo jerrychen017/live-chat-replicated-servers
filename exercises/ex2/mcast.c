@@ -118,9 +118,6 @@ int main(int argc, char* argv[]) {
     // corresponding packet index for each start array index
     int start_packet_indices[num_machines];
     memset(start_packet_indices, 1, num_machines * sizeof(int)); // initializing start_packet_indices
-
-    int last_delivered_indices[num_machines];
-    memset(last_delivered_indices, 0, num_machines * sizeof(int)); // initializing last_delivered indices
     
     int end_indices[num_machines]; 
     memset(end_indices, -1, num_machines * sizeof(int)); 
@@ -165,6 +162,8 @@ int main(int argc, char* argv[]) {
             (struct sockaddr *)&send_addr, sizeof(send_addr) );
     }
 
+    print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, counter, last_delivered_counter, num_created, machine_index, num_machines);
+
     struct packet nack_packet;
     nack_packet.tag = TAG_NACK;
     nack_packet.machine_index = machine_index;
@@ -182,11 +181,13 @@ int main(int argc, char* argv[]) {
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if ( FD_ISSET( sr, &temp_mask) ) {
-                printf("I got a packet\n");
                 bytes_received = recv_dbg( sr, (char *) &received_packet, sizeof(struct packet), 0 );                
                 if (bytes_received != sizeof(struct packet)) {
                     printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
                 }
+
+                // TODO: print for debugging, delete later
+                print_packet(&received_packet, num_machines);
 
                 switch (received_packet.tag) {
 
@@ -208,6 +209,8 @@ int main(int argc, char* argv[]) {
                         if (table[received_packet.machine_index - 1][insert_index].tag != TAG_EMPTY) {
                             memcpy(&table[received_packet.machine_index - 1][insert_index], &received_packet, sizeof(struct packet));
                         }
+
+                        // TODO: adopt the larger counter
 
                     
                         // try to deliver packets
@@ -374,6 +377,7 @@ int main(int argc, char* argv[]) {
             } else {
                 // timeout
                 // send ack
+                printf("TIMEOUT\n");
                 struct packet ack_packet; 
                 ack_packet.tag = TAG_ACK; 
                 ack_packet.machine_index = machine_index;
