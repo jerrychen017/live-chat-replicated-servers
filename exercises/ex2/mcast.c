@@ -117,15 +117,27 @@ int main(int argc, char* argv[]) {
 
     // corresponding packet index for each start array index
     int start_packet_indices[num_machines];
-    memset(start_packet_indices, 1, num_machines * sizeof(int)); // initializing start_packet_indices
+    // initializing start_packet_indices
+    for (int i = 0; i < num_machines; i++) {
+        start_packet_indices[i] = 1;
+    }
     
+    printf("start_packet_indices\n");
+    for (int i = 0; i < num_machines; i++) {
+        printf("machine %d: %d\n", i + 1, start_packet_indices[i]);
+    }
+
     int end_indices[num_machines]; 
-    memset(end_indices, -1, num_machines * sizeof(int)); 
+    for (int i = 0; i < num_machines; i++) {
+        end_indices[i] = -1;
+    }
     end_indices[machine_index - 1] = num_packets;
 
     // array of boolean indicating finished machines 
-    bool finished[num_machines]; 
-    memset(finished, false, num_machines * sizeof(bool)); 
+    bool finished[num_machines];
+    for (int i = 0; i < num_machines; i++) {
+        finished[i] = false;
+    }
 
     int counter = 0; 
     int last_delivered_counter = 0;
@@ -167,7 +179,9 @@ int main(int argc, char* argv[]) {
     struct packet nack_packet;
     nack_packet.tag = TAG_NACK;
     nack_packet.machine_index = machine_index;
-    memset(nack_packet.payload, -1, num_machines * sizeof(int));
+    for (int i = 0; i < num_machines; i++) {
+        nack_packet.payload[i] = -1;
+    }
 
     // file pointer for writing
     FILE *fd;
@@ -186,7 +200,12 @@ int main(int argc, char* argv[]) {
                     printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
                 }
 
+                if (received_packet.machine_index == machine_index) {
+                    continue;
+                }
+
                 // TODO: print for debugging, delete later
+                print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, counter, last_delivered_counter, num_created, machine_index, num_machines);
                 print_packet(&received_packet, num_machines);
 
                 switch (received_packet.tag) {
@@ -199,25 +218,25 @@ int main(int argc, char* argv[]) {
 
                     case TAG_DATA:
                     {
-                        printf("curretn ack\n");
-                        for (int i = 0; i < num_machines; i++) {
-                            printf("machine %d: %d, ", i + 1, acks[i]);
-                        }
                         // insert packet to table
                         int insert_index = convert(received_packet.packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
                         // checks if the target spot is occupied
-                        if (table[received_packet.machine_index - 1][insert_index].tag != TAG_EMPTY) {
+                        if (table[received_packet.machine_index - 1][insert_index].tag == TAG_EMPTY) {
                             memcpy(&table[received_packet.machine_index - 1][insert_index], &received_packet, sizeof(struct packet));
                         }
 
-                        // TODO: adopt the larger counter
-
+                        // adopt the larger counter
+                        if (counter < received_packet.counter) {
+                            counter = received_packet.counter;
+                        }
                     
                         // try to deliver packets
                         bool is_full = true; 
                         while(is_full) {
                             bool deliverable[num_machines]; 
-                            memset(start_array_indices, false, num_machines * sizeof(bool));
+                            for (int i = 0; i < num_machines; i++) {
+                                deliverable[i] = false;
+                            }
                             for (int i = 0; i < num_machines; i++) {
                                 if (finished[i]) { // skips this machine if it has already ended
                                     nack_packet.payload[i] = -1; 
@@ -238,16 +257,17 @@ int main(int argc, char* argv[]) {
                             }
                             if (is_full) {
                                 // deliver
+                                last_delivered_counter++;
                                 for (int i = 0; i < num_machines; i++) {
                                     if (finished[i]) { // skips this machine if it has already ended
                                         continue; 
                                     }
                                     if (deliverable[i]) {
                                         if (i + 1 == machine_index) { // my machine case
-                                            fprintf(fd, "%2d, %8d, %8d\n", machine_index, start_packet_indices[i], created_packets[start_array_indices[i]].random_data);
-                                            // update my ack, which represents delivered upto 
                                             acks[i]++;
-                                            
+                                            printf("My machines case: write to file\n");
+                                            fprintf(fd, "%2d, %8d, %8d\n", machine_index, start_packet_indices[i], created_packets[start_array_indices[i]].random_data);
+                                                                                
                                             // TODO: how to end?
                                             check_end(fd, acks, finished, num_machines, machine_index, num_packets);
 
@@ -293,6 +313,7 @@ int main(int argc, char* argv[]) {
                                             if (start_packet_indices[i] != table[i][start_array_indices[i]].packet_index) {
                                                 printf("Warning: packet index doesn't match\n");
                                             }
+                                            printf("Other machines case: write to file\n"); 
                                             fprintf(fd, "%2d, %8d, %8d\n", i + 1, start_packet_indices[i], table[i][start_array_indices[i]].random_data); 
 
                                             // check if the machine has finished. update the finished array if yes. 

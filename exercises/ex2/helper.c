@@ -57,7 +57,8 @@ void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machin
 
 void print_packet(struct packet *to_print, int num_machines) {
     
-    char divider[] = "----------------------------------------------------------------------";
+    printf("-----------------------------PACKET INFO--------------------------------\n");
+    char divider[] = "---------------------------PACKET INFO END--------------------------------";
 
     switch(to_print->tag) {
         case TAG_START:
@@ -123,12 +124,11 @@ void print_packet(struct packet *to_print, int num_machines) {
     }
 }
 
-void print_status(struct packet *created_packets, int *acks, struct packet *table[], int *start_array_indices, 
+void print_status(struct packet *created_packets, int *acks, struct packet *table[WINDOW_SIZE], int *start_array_indices, 
     int *start_packet_indices, int *end_indices, bool* finished,
     int counter, int last_delivered_counter, int num_created, int machine_index, int num_machines) {
 
-    char divider[] = "----------------------------------------------------------------------";
-    printf("--------STATUS report--------\n");
+    printf("-------------------------------STATUS report-------------------------------\n");
     // created packet
     printf("----Created packets----\n");
     printf("Created %d packets\n", num_created);
@@ -161,7 +161,7 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
             printf("machine %d:\n", i + 1);
             printf("start packet index: %d\n", start_packet_indices[i]);
             printf("start array index: %d\n", start_array_indices[i]);
-            for (int j = 0; j < WINDOW_SIZE; j++) {
+            /*for (int j = 0; j < WINDOW_SIZE; j++) {
                 printf("    array index: %d, ", j);
                 if (table[i][j].tag == TAG_EMPTY) {
                     printf("empty\n");
@@ -171,7 +171,7 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
                 printf("    from machine: %d, ", created_packets[i].machine_index);
                 printf("    packet index: %d, ", created_packets[i].packet_index);
                 printf("    random data: %d\n", created_packets[i].random_data);
-            }
+            }*/
         }
     }
 
@@ -193,5 +193,6 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
         }
     }
 
-    printf("%s\n", divider);
+    printf("------------------------------STATUS report END------------------------------\n");
+
 }
