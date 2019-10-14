@@ -277,11 +277,13 @@ int main(int argc, char* argv[]) {
                                                     min = acks[j];
                                                 }
                                             }
+                                            printf("MIN is %d\n", min);
                                             if (min - start_packet_indices[i] > 1) {
                                                 printf("Warning: min(ack) increase more than one after delivering my packet\n");
                                             }
 
-                                            if (min >= start_packet_indices[i] && num_created < num_packets) {
+                                            while (min >= start_packet_indices[i] && num_created < num_packets) {
+                                                printf("slide window\n");
 
                                                 // create new packet
                                                 created_packets[start_array_indices[i]].tag = TAG_DATA;
@@ -346,12 +348,49 @@ int main(int argc, char* argv[]) {
                         }
                         sendto(ss, &ack_packet, sizeof(struct packet), 0,
                             (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                        printf("Send ACK packet\n");
                         break;
                     }
 
                     case TAG_ACK:
                     {
                         acks[received_packet.machine_index - 1] = received_packet.payload[machine_index - 1];
+                        int min = acks[0]; 
+                        for (int j = 0; j < num_machines; j++) {
+                                                if (acks[j] < min) {
+                                                    min = acks[j];
+                                                }
+                                            }
+                                            printf("MIN is %d\n", min);
+                                            if (min - start_packet_indices[machine_index -  1] > 1) {
+                                                printf("Warning: min(ack) increase more than one after delivering my packet\n");
+                                            }
+
+                                            while (min >= start_packet_indices[machine_index -  1] && num_created < num_packets) {
+                                                printf("slide window\n");
+
+                                                // create new packet
+                                                created_packets[start_array_indices[machine_index -  1]].tag = TAG_DATA;
+                                                counter++;
+                                                created_packets[start_array_indices[machine_index -  1]].counter = counter;
+                                                created_packets[start_array_indices[machine_index -  1]].machine_index = machine_index;
+                                                created_packets[start_array_indices[machine_index -  1]].packet_index = num_created + 1;
+                                                num_created++;
+                                                created_packets[start_array_indices[machine_index -  1]].random_data = (rand() % 999999) + 1;
+
+                                                sendto( ss, &created_packets[start_array_indices[machine_index -  1]], sizeof(struct packet), 0, 
+                                                    (struct sockaddr *)&send_addr, sizeof(send_addr) );
+
+                                                if (num_created == num_packets) {
+                                                    sendto(ss, &end_packet, sizeof(struct packet), 0,
+                                                        (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                                }
+
+                                                // slide window
+                                                start_array_indices[machine_index -  1] = (start_array_indices[machine_index -  1] + 1) % WINDOW_SIZE;
+                                                start_packet_indices[machine_index -  1]++; 
+
+                                            }
                         // TODO: how to end?!!!!
                         check_end(fd, acks, finished, num_machines, machine_index, num_packets);
                         break;

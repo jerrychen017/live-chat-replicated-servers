@@ -58,7 +58,7 @@ void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machin
 void print_packet(struct packet *to_print, int num_machines) {
     
     printf("-----------------------------PACKET INFO--------------------------------\n");
-    char divider[] = "---------------------------PACKET INFO END--------------------------------";
+    char divider[] = "---------------------------PACKET INFO END--------------------------------\n";
 
     switch(to_print->tag) {
         case TAG_START:
@@ -82,9 +82,9 @@ void print_packet(struct packet *to_print, int num_machines) {
 
         case TAG_ACK:
         {
-            printf("Receive ACK packet\n");
+            printf("Receive ACK packet from machine %d\n", to_print->machine_index);
             for (int i = 0; i < num_machines; i++) {
-                printf("machine %d ack: %d\n", i + 1, to_print->payload[i]);
+                printf("has delivered machine %d packets up to: %d\n", i + 1, to_print->payload[i]);
             }
             printf("%s\n", divider);
             break;
@@ -150,7 +150,7 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
     // acks
     printf("-------Ack-------\n");
     for (int i = 0; i < num_machines; i++) {
-        printf("machine %d delivered up to %d\n", i + 1, acks[i]);
+        printf("machine %d has delivered my packets up to %d\n", i + 1, acks[i]);
     }
 
     // table
@@ -193,6 +193,6 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
         }
     }
 
-    printf("------------------------------STATUS report END------------------------------\n");
+    printf("------------------------------STATUS report END------------------------------\n\n");
 
 }
