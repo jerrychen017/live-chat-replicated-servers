@@ -190,9 +190,13 @@ int main(int argc, char* argv[]) {
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if ( FD_ISSET( sr, &temp_mask) ) {
-                bytes_received = recv_dbg( sr, (char *) &received_packet, sizeof(struct packet), 0 );                
+                bytes_received = recv_dbg( sr, (char *) &received_packet, sizeof(struct packet), 0 );
+                if (bytes_received == 0) {
+                    printf("Packet is lost\n");
+                    continue;
+                }
                 if (bytes_received != sizeof(struct packet)) {
-                    printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
+                    printf("Warning: number of bytes in the received pakcet does not equal to size of packet\n");
                 }
 
                 if (received_packet.machine_index == machine_index) {
@@ -207,7 +211,7 @@ int main(int argc, char* argv[]) {
 
                     case TAG_START:
                     {
-                        printf("Warning: receive START packet in the middle of delivery");
+                        printf("Warning: receive START packet in the middle of delivery\n");
                         break;
                     }
 
@@ -288,9 +292,6 @@ int main(int argc, char* argv[]) {
                                                 }
                                             }
                                             printf("MIN is %d\n", min);
-                                            if (min - start_packet_indices[i] > 1) {
-                                                printf("Warning: min(ack) increase more than one after delivering my packet\n");
-                                            }
 
                                             while (min >= start_packet_indices[i] && num_created < num_packets) {
                                                 printf("slide window\n");
@@ -460,31 +461,31 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-            } else {
-                // timeout
-                // send ack
-                printf("TIMEOUT!\n");
-                struct packet ack_packet; 
-                ack_packet.tag = TAG_ACK; 
-                ack_packet.machine_index = machine_index;
-                for (int i = 0; i < num_machines; i++) {
-                    ack_packet.payload[i] = start_packet_indices[i] - 1;
-                }
-                sendto(ss, &ack_packet, sizeof(struct packet), 0,
-                    (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
-
-                bool all_negative = true;
-                for (int i = 0; i < num_machines; i++) {
-                    if (nack_packet.payload[i] != -1) {
-                        all_negative = false;
-                        break;
-                    }
-                }
-                if (!all_negative) {
-                    sendto(ss, &nack_packet, sizeof(struct packet), 0,
-                        (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
-                }   
             }
+        } else {
+            // timeout
+            // send ack
+            printf("TIMEOUT!\n");
+            struct packet ack_packet; 
+            ack_packet.tag = TAG_ACK; 
+            ack_packet.machine_index = machine_index;
+            for (int i = 0; i < num_machines; i++) {
+                ack_packet.payload[i] = start_packet_indices[i] - 1;
+            }
+            sendto(ss, &ack_packet, sizeof(struct packet), 0,
+                (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
+
+            bool all_negative = true;
+            for (int i = 0; i < num_machines; i++) {
+                if (nack_packet.payload[i] != -1) {
+                    all_negative = false;
+                    break;
+                }
+            }
+            if (!all_negative) {
+                sendto(ss, &nack_packet, sizeof(struct packet), 0,
+                    (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
+            }   
         }
     }
 
