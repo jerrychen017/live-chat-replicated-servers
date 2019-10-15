@@ -90,7 +90,7 @@ int main(int argc, char* argv[]) {
 
     struct timeval timeout;
     timeout.tv_sec = 0;
-    timeout.tv_usec = 20000;
+    timeout.tv_usec = 100000;
 
     int bytes_received; 
     struct packet received_packet; 
@@ -260,7 +260,9 @@ int main(int argc, char* argv[]) {
                                         nack_packet.payload[i] = start_packet_indices[i]; 
                                     }
                                 } else { // my machine case 
-                                    deliverable[i] = true; 
+                                    int index = convert(acks[i] + 1, start_packet_indices[i], start_array_indices[i]);
+                                    // TODO: special case: if new packet has not been generated?
+                                    deliverable[i] = (created_packets[index].counter == last_delivered_counter + 1);
                                 }
                             }
                             if (is_full) {
@@ -275,6 +277,7 @@ int main(int argc, char* argv[]) {
                                             acks[i]++;
                                             printf("My machine case: write to file\n");
                                             int index = convert(acks[i], start_packet_indices[i], start_array_indices[i]);
+                                            printf("counter: %d, machine_index: %d, packet_index: %d\n", created_packets[index].counter, created_packets[index].machine_index, created_packets[index].packet_index);
                                             fprintf(fd, "%2d, %8d, %8d\n", machine_index, acks[i], created_packets[index].random_data);
 
                                             // if delivered last packet, mark as finished
@@ -327,6 +330,7 @@ int main(int argc, char* argv[]) {
                                                 printf("Warning: packet index doesn't match\n");
                                             }
                                             printf("Other machines case: write to file\n"); 
+                                            printf("counter: %d, machine_index: %d, packet_index: %d\n", table[i][start_array_indices[i]].counter, table[i][start_array_indices[i]].machine_index, table[i][start_array_indices[i]].packet_index);
                                             fprintf(fd, "%2d, %8d, %8d\n", i + 1, start_packet_indices[i], table[i][start_array_indices[i]].random_data); 
 
                                             // check if the machine has finished. update the finished array if yes. 
@@ -483,6 +487,14 @@ int main(int argc, char* argv[]) {
                 }
             }
             if (!all_negative) {
+                printf("Send NACK packet\n");
+                    for (int i = 0; i < num_machines; i++) {
+                        if (nack_packet.payload[i] == -1) {
+                            printf("machine %d nack: none\n", i + 1);
+                        } else {
+                            printf("machine %d nack: %d\n", i + 1, nack_packet.payload[i]);
+                        }
+                    }
                 sendto(ss, &nack_packet, sizeof(struct packet), 0,
                     (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
             }   

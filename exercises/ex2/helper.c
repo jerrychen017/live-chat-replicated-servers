@@ -129,6 +129,7 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
 
     printf("-------------------------------STATUS report-------------------------------\n");
     // created packet
+    printf("Counter: %d\n", counter);
     printf("----Created packets----\n");
     printf("Created %d packets\n", num_created);
     printf("start packet index: %d\n", start_packet_indices[machine_index - 1]);
@@ -188,7 +189,9 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
     printf("------Finished------\n");
     for (int i = 0; i < num_machines; i++) {
         if (finished[i]) {
-            printf("machine %d finished\n", i + 1);
+            printf("machine %d: finished\n", i + 1);
+        } else {
+            printf("machine %d: not done\n", i + 1);
         }
     }
 
