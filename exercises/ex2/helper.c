@@ -34,9 +34,6 @@ void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machin
 {
     // all finished array entries are true 
     for (int i = 0; i < num_machines; i++) {
-        if (i == machine_index - 1) {
-            continue; 
-        }
         if (!finished[i]) {
             return; 
         } 
