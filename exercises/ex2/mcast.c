@@ -89,8 +89,6 @@ int main(int argc, char* argv[]) {
     FD_SET( sr, &mask );
 
     struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100000;
 
     int bytes_received; 
     struct packet received_packet; 
@@ -185,8 +183,11 @@ int main(int argc, char* argv[]) {
     sprintf(filename, "%d.out", machine_index);
     fd = fopen(filename, "w");
 
+
     for(;;) {
         temp_mask = mask;
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
         num = select( FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0) {
             if ( FD_ISSET( sr, &temp_mask) ) {
@@ -283,6 +284,7 @@ int main(int argc, char* argv[]) {
                                             // if delivered last packet, mark as finished
                                             if (acks[i] == num_packets) {
                                                 finished[i] = true;
+                                                nack_packet.payload[i] = -1; 
                                             }
 
                                             // TODO: how to end?
@@ -311,6 +313,41 @@ int main(int argc, char* argv[]) {
                                                 sendto( ss, &created_packets[start_array_indices[i]], sizeof(struct packet), 0, 
                                                     (struct sockaddr *)&send_addr, sizeof(send_addr) );
 
+                                                // need to deliver if has finished delivering other machines' packets
+                                                bool other_finished = true;
+                                                for (int i = 0; i < num_machines; i++) {
+                                                    if (i + 1 != machine_index && !finished[i]) {
+                                                        other_finished = false;
+                                                        break;
+                                                    }
+                                                }
+
+                                                if (other_finished) {
+                                                    acks[i]++;
+                                                    printf("My machine case: write to file\n");
+                                                    int index = convert(acks[i], start_packet_indices[i], start_array_indices[i]);
+                                                    printf("counter: %d, machine_index: %d, packet_index: %d\n", created_packets[index].counter, created_packets[index].machine_index, created_packets[index].packet_index);
+                                                    fprintf(fd, "%2d, %8d, %8d\n", machine_index, acks[i], created_packets[index].random_data);
+
+                                                    // if delivered last packet, mark as finished
+                                                    if (acks[i] == num_packets) {
+                                                        finished[i] = true;
+                                                        nack_packet.payload[i] = -1; 
+                                                    }
+
+                                                    // TODO: how to end?
+                                                    check_end(fd, acks, finished, num_machines, machine_index, num_packets);
+
+                                                    // update min
+                                                    min = acks[0]; 
+                                                    for (int j = 0; j < num_machines; j++) {
+                                                        if (acks[j] < min) {
+                                                            min = acks[j];
+                                                        }
+                                                    }
+                                                    printf("MIN is %d\n", min);
+                                                }
+
                                                 if (num_created == num_packets) {
                                                     sendto(ss, &end_packet, sizeof(struct packet), 0,
                                                         (struct sockaddr *)&send_addr, sizeof(send_addr) );
@@ -336,6 +373,7 @@ int main(int argc, char* argv[]) {
                                             // check if the machine has finished. update the finished array if yes. 
                                             if (end_indices[i] != -1 && start_packet_indices[i] >= end_indices[i]) { // finished 
                                                 finished[i] = true;
+                                                nack_packet.payload[i] = -1; 
                                                 // TODO: how to end?
                                                 check_end(fd, acks, finished, num_machines, machine_index, num_packets);
                                             } else {
@@ -403,6 +441,41 @@ int main(int argc, char* argv[]) {
                             sendto( ss, &created_packets[start_array_indices[machine_index -  1]], sizeof(struct packet), 0, 
                                 (struct sockaddr *)&send_addr, sizeof(send_addr) );
 
+                            // need to deliver if has finished delivering other machines' packets
+                            bool other_finished = true;
+                            for (int i = 0; i < num_machines; i++) {
+                                if (i + 1 != machine_index && !finished[i]) {
+                                    other_finished = false;
+                                    break;
+                                }
+                            }
+
+                            if (other_finished) {
+                                acks[machine_index - 1]++;
+                                printf("My machine case: write to file\n");
+                                int index = convert(acks[machine_index - 1], start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
+                                printf("counter: %d, machine_index: %d, packet_index: %d\n", created_packets[index].counter, created_packets[index].machine_index, created_packets[index].packet_index);
+                                fprintf(fd, "%2d, %8d, %8d\n", machine_index, acks[machine_index - 1], created_packets[index].random_data);
+
+                                // if delivered last packet, mark as finished
+                                if (acks[machine_index - 1] == num_packets) {
+                                    finished[machine_index - 1] = true;
+                                    nack_packet.payload[machine_index - 1] = -1;
+                                }
+
+                                // TODO: how to end?
+                                check_end(fd, acks, finished, num_machines, machine_index, num_packets);
+
+                                // update min
+                                min = acks[0]; 
+                                for (int j = 0; j < num_machines; j++) {
+                                    if (acks[j] < min) {
+                                        min = acks[j];
+                                    }
+                                }
+                                printf("MIN is %d\n", min);
+                            }
+
                             if (num_created == num_packets) {
                                 sendto(ss, &end_packet, sizeof(struct packet), 0,
                                     (struct sockaddr *)&send_addr, sizeof(send_addr) );
@@ -430,7 +503,7 @@ int main(int argc, char* argv[]) {
                                     if (requested_packet_index == num_packets + 1) {
                                         printf("Send END packet\n");
                                         sendto(ss, &end_packet, sizeof(struct packet), 0,
-                                        (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                            (struct sockaddr *)&send_addr, sizeof(send_addr) );
                                     } else {
                                         int index = convert(requested_packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
                                         printf("Retransmit packet with packet index %d\n", requested_packet_index);
@@ -458,6 +531,7 @@ int main(int argc, char* argv[]) {
                         // update finished array if possible
                         if (start_packet_indices[received_packet.machine_index - 1] >= end_indices[received_packet.machine_index - 1]) {
                             finished[received_packet.machine_index - 1] = true;
+                            nack_packet.payload[received_packet.machine_index - 1] = -1; 
                             // TODO: how to end?
                             check_end(fd, acks, finished, num_machines, machine_index, num_packets);
                         }
