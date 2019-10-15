@@ -51,6 +51,7 @@ void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machin
         printf("=========================\n");
         printf("       Ready to end\n");
         printf("=========================\n");
+        exit(0);
     }
 }
 
