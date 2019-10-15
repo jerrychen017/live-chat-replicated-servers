@@ -42,7 +42,7 @@ void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machin
         } 
     }
 
-    // min(ack) == num_packets (all other machines received my packets)
+    // min(ack) == num_packets (all other machines delivered my packets)
     int min_ack = acks[0]; 
     for (int i = 0; i < num_machines; i++) { 
         if (acks[i] < min_ack) {
@@ -51,7 +51,9 @@ void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machin
     }
     if (min_ack == num_packets) {
         fclose(fd);
-        printf("Ready to end\n");
+        printf("=========================\n");
+        printf("       Ready to end\n");
+        printf("=========================\n");
     }
 }
 
@@ -84,7 +86,7 @@ void print_packet(struct packet *to_print, int num_machines) {
         {
             printf("Receive ACK packet from machine %d\n", to_print->machine_index);
             for (int i = 0; i < num_machines; i++) {
-                printf("has delivered machine %d packets up to: %d\n", i + 1, to_print->payload[i]);
+                printf("machine %d has delivered machine %d packets up to: %d\n", to_print->machine_index, i + 1, to_print->payload[i]);
             }
             printf("%s\n", divider);
             break;
