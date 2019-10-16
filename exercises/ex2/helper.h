@@ -15,7 +15,7 @@ unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigne
 *  1. Other machines have received all my packets (min(ack) == num_packets)
 *  2. Deliver all packets from other machines
 */
-void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machine_index, int num_packets);
+void check_end(FILE *fd, int *acks, bool *finished, int *last_counters, int num_machines, int machine_index, int num_packets, int counter, bool * ready_to_end, int ss, struct sockaddr_in * send_addr);
 
 // Print packet information for debugging
 void print_packet(struct packet *to_print, int num_machines);

@@ -183,6 +183,13 @@ int main(int argc, char* argv[]) {
     sprintf(filename, "%d.out", machine_index);
     fd = fopen(filename, "w");
 
+    // contains last delivered counters of machines 
+    int last_counters[num_machines]; 
+     for (int i = 0; i < num_machines; i++) {
+        last_counters[i] = -1;
+    }
+
+    bool ready_to_end = false; 
 
     for(;;) {
         temp_mask = mask;
@@ -288,7 +295,7 @@ int main(int argc, char* argv[]) {
                                             }
 
                                             // TODO: how to end?
-                                            check_end(fd, acks, finished, num_machines, machine_index, num_packets);
+                                            check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
 
                                             int min = acks[0]; 
                                             for (int j = 0; j < num_machines; j++) {
@@ -336,7 +343,7 @@ int main(int argc, char* argv[]) {
                                                     }
 
                                                     // TODO: how to end?
-                                                    check_end(fd, acks, finished, num_machines, machine_index, num_packets);
+                                                    check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
 
                                                     // update min
                                                     min = acks[0]; 
@@ -375,7 +382,7 @@ int main(int argc, char* argv[]) {
                                                 finished[i] = true;
                                                 nack_packet.payload[i] = -1; 
                                                 // TODO: how to end?
-                                                check_end(fd, acks, finished, num_machines, machine_index, num_packets);
+                                                check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
                                             } else {
                                                 // discard delivered packet in table
                                                 table[i][start_array_indices[i]].tag = TAG_EMPTY;
@@ -464,7 +471,7 @@ int main(int argc, char* argv[]) {
                                 }
 
                                 // TODO: how to end?
-                                check_end(fd, acks, finished, num_machines, machine_index, num_packets);
+                                check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr, ss, &send_addr);
 
                                 // update min
                                 min = acks[0]; 
@@ -533,9 +540,27 @@ int main(int argc, char* argv[]) {
                             finished[received_packet.machine_index - 1] = true;
                             nack_packet.payload[received_packet.machine_index - 1] = -1; 
                             // TODO: how to end?
-                            check_end(fd, acks, finished, num_machines, machine_index, num_packets);
+                            check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
                         }
                         break;
+                    }
+
+                    case TAG_COUNTER: 
+                    {   
+                        // if received packet has updated counter, then send new packet.
+                        for (int i = 0; i < num_machines; i++) { 
+                            if (last_counters[i] == -1 && received_packet.payload[i] != -1) {
+                                last_counters[i] = received_packet.payload[i]; 
+                                
+                                // send new counter packet
+                                struct packet last_counter_packet; 
+                                last_counter_packet.tag = TAG_COUNTER; 
+                                last_counter_packet.machine_index = machine_index; 
+                                last_counter_packet.payload[machine_index - 1] = counter; 
+                                sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
+                                            (struct sockaddr *)&send_addr, sizeof(send_addr));
+                            }
+                        }
                     }
                 }
 
@@ -572,6 +597,17 @@ int main(int argc, char* argv[]) {
                 sendto(ss, &nack_packet, sizeof(struct packet), 0,
                     (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
             }   
+
+            // if ready to end is true, send counter packet 
+            if (ready_to_end) { 
+                // send new counter packet
+                struct packet last_counter_packet; 
+                last_counter_packet.tag = TAG_COUNTER; 
+                last_counter_packet.machine_index = machine_index; 
+                last_counter_packet.payload[machine_index - 1] = counter; 
+                sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
+                        (struct sockaddr *)&send_addr, sizeof(send_addr));
+            }
         }
     }
 

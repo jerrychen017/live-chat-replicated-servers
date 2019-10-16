@@ -9,6 +9,7 @@
 #define TAG_NACK 3
 #define TAG_END 4
 #define TAG_EMPTY 5
+#define TAG_COUNTER 6 // message that contains the last counter this machine delivered 
 
 #define DELIVERY_GAP 5
 

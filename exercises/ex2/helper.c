@@ -30,8 +30,11 @@ unsigned int convert(unsigned int packet_index, unsigned int start_packet_index,
   return (packet_index - start_packet_index + start_array_index) % WINDOW_SIZE;
 }
 
-void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machine_index, int num_packets)
+void check_end(FILE *fd, int *acks, bool *finished, int *last_counters, int num_machines, int machine_index, int num_packets, int counter, bool * ready_to_end ,int ss, struct sockaddr_in * send_addr)
 {
+    if (*ready_to_end) {
+        return; 
+    }
     // all finished array entries are true 
     for (int i = 0; i < num_machines; i++) {
         if (!finished[i]) {
@@ -48,10 +51,20 @@ void check_end(FILE *fd, int *acks, bool *finished, int num_machines, int machin
     }
     if (min_ack == num_packets) {
         fclose(fd);
+        last_counters[machine_index  - 1] = counter; 
+        *ready_to_end = true; 
         printf("=========================\n");
         printf("       Ready to end\n");
         printf("=========================\n");
-        exit(0);
+        
+        struct packet last_counter_packet; 
+        last_counter_packet.tag = TAG_COUNTER; 
+        last_counter_packet.machine_index = machine_index; 
+        last_counter_packet.payload[machine_index - 1] = counter; 
+
+        
+        sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
+                                            (struct sockaddr *)&(*send_addr), sizeof((*send_addr)) );
     }
 }
 
