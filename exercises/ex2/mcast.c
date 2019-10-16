@@ -190,6 +190,8 @@ int main(int argc, char* argv[]) {
     }
 
     bool ready_to_end = false; 
+    struct timeval terminate_start; // not used yet. 
+    struct timeval terminate_end;// not used yet. 
 
     for(;;) {
         temp_mask = mask;
@@ -471,7 +473,7 @@ int main(int argc, char* argv[]) {
                                 }
 
                                 // TODO: how to end?
-                                check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr, ss, &send_addr);
+                                check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
 
                                 // update min
                                 min = acks[0]; 
@@ -494,7 +496,7 @@ int main(int argc, char* argv[]) {
 
                         }
                         // TODO: how to end?!!!!
-                        check_end(fd, acks, finished, num_machines, machine_index, num_packets);
+                        check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
                         break;
                     }
 
@@ -548,8 +550,15 @@ int main(int argc, char* argv[]) {
                     case TAG_COUNTER: 
                     {   
                         // if received packet has updated counter, then send new packet.
+                        bool all_received = true; 
                         for (int i = 0; i < num_machines; i++) { 
+                            all_received = all_received && last_counters[i] == last_delivered_counter;
                             if (last_counters[i] == -1 && received_packet.payload[i] != -1) {
+
+                                if (received_packet.payload[i] != last_delivered_counter) { 
+                                    printf("Warning: last packet counter sent from machine %d does not match.\n", received_packet.machine_index);
+                                }
+
                                 last_counters[i] = received_packet.payload[i]; 
                                 
                                 // send new counter packet
@@ -561,6 +570,19 @@ int main(int argc, char* argv[]) {
                                             (struct sockaddr *)&send_addr, sizeof(send_addr));
                             }
                         }
+
+                        if (all_received) {
+                            // send new counter packet
+                            struct packet last_counter_packet; 
+                            last_counter_packet.tag = TAG_COUNTER; 
+                            last_counter_packet.machine_index = machine_index; 
+                            last_counter_packet.payload[machine_index - 1] = counter; 
+                            sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
+                                        (struct sockaddr *)&send_addr, sizeof(send_addr));
+                            exit(0);
+                        }
+
+                        
                     }
                 }
 
