@@ -53,7 +53,7 @@ void check_end(FILE *fd, int *acks, bool *finished, int *last_counters, int num_
         }
     }
 
-    if (finished[machine_index - 1] && last_counters[machine_index - 1] == -1) {
+    if (all_finished(finished, num_machines) && last_counters[machine_index - 1] == -1) {
         last_counters[machine_index - 1] = counter;
     }
 
@@ -72,9 +72,6 @@ void check_end(FILE *fd, int *acks, bool *finished, int *last_counters, int num_
         for (int i = 0; i < num_machines; i++) {
             last_counter_packet.payload[i] = last_counters[i]; 
         }
-        
-
-
         sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                             (struct sockaddr *)&(*send_addr), sizeof((*send_addr)) );
     }
@@ -142,6 +139,14 @@ void print_packet(struct packet *to_print, int num_machines) {
         {
             printf(" ** ERROR ** ");
             printf("Receive EMPTY packet\n");
+            printf("%s\n", divider);
+            break;
+        } 
+
+        case TAG_COUNTER:
+        {
+            printf("Receive COUNTER packet\n");
+            printf("from machine: %d\n", to_print->machine_index);
             printf("%s\n", divider);
             break;
         }

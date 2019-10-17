@@ -269,6 +269,9 @@ int main(int argc, char* argv[]) {
                         */
                         bool is_full = true; 
                         while(is_full) {
+                            if (ready_to_end) { // to avoid infinite loop
+                                break;
+                            }
                             bool deliverable[num_machines]; 
                             // initialize all deliverables to false 
                             for (int i = 0; i < num_machines; i++) {
