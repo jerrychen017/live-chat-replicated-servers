@@ -60,9 +60,13 @@ void check_end(FILE *fd, int *acks, bool *finished, int *last_counters, int num_
         struct packet last_counter_packet; 
         last_counter_packet.tag = TAG_COUNTER; 
         last_counter_packet.machine_index = machine_index; 
-        last_counter_packet.payload[machine_index - 1] = counter; 
-
+        last_counters[machine_index - 1] = counter;
+        for (int i = 0; i < num_machines; i++) {
+            last_counter_packet.payload[i] = last_counters[i]; 
+        }
         
+
+
         sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                             (struct sockaddr *)&(*send_addr), sizeof((*send_addr)) );
     }
@@ -138,7 +142,7 @@ void print_packet(struct packet *to_print, int num_machines) {
 }
 
 void print_status(struct packet *created_packets, int *acks, struct packet *table[WINDOW_SIZE], int *start_array_indices, 
-    int *start_packet_indices, int *end_indices, bool* finished,
+    int *start_packet_indices, int *end_indices, bool* finished, int *last_counters,
     int counter, int last_delivered_counter, int num_created, int machine_index, int num_machines) {
 
     printf("-------------------------------STATUS report-------------------------------\n");
@@ -207,6 +211,13 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
         } else {
             printf("machine %d: not done\n", i + 1);
         }
+    }
+
+    // last_counters 
+    printf("------Last Counters------\n");
+    for (int i = 0; i < num_machines; i++) {
+        printf("machine %d: last_counter is %d\n", i + 1, last_counters[i]);
+        
     }
 
     printf("------------------------------STATUS report END------------------------------\n\n");

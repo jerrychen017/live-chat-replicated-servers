@@ -167,7 +167,6 @@ int main(int argc, char* argv[]) {
             (struct sockaddr *)&send_addr, sizeof(send_addr) );
     }
 
-    print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, counter, last_delivered_counter, num_created, machine_index, num_machines);
 
     struct packet nack_packet;
     nack_packet.tag = TAG_NACK;
@@ -189,9 +188,14 @@ int main(int argc, char* argv[]) {
         last_counters[i] = -1;
     }
 
+    print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
+
+
     bool ready_to_end = false; 
-    struct timeval terminate_start; // not used yet. 
-    struct timeval terminate_end;// not used yet. 
+    struct timeval terminate_start; 
+    // initialize terminate starting time
+    gettimeofday(&terminate_start, NULL); 
+    struct timeval terminate_end;
 
     for(;;) {
         temp_mask = mask;
@@ -213,8 +217,13 @@ int main(int argc, char* argv[]) {
                     continue;
                 }
 
+                if (ready_to_end) {
+                    // record terminate starting time
+                    gettimeofday(&terminate_start, NULL); 
+                }
+
                 // TODO: print for debugging, delete later
-                print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, counter, last_delivered_counter, num_created, machine_index, num_machines);
+                print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
                 print_packet(&received_packet, num_machines);
 
                 switch (received_packet.tag) {
@@ -565,7 +574,9 @@ int main(int argc, char* argv[]) {
                                 struct packet last_counter_packet; 
                                 last_counter_packet.tag = TAG_COUNTER; 
                                 last_counter_packet.machine_index = machine_index; 
-                                last_counter_packet.payload[machine_index - 1] = counter; 
+                                for (int i = 0; i < num_machines; i++) {
+                                    last_counter_packet.payload[i] = last_counters[i]; 
+                                } 
                                 sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                             (struct sockaddr *)&send_addr, sizeof(send_addr));
                             }
@@ -600,6 +611,12 @@ int main(int argc, char* argv[]) {
             sendto(ss, &ack_packet, sizeof(struct packet), 0,
                 (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
 
+
+            // TODO: write if condition for sending end packet
+            sendto(ss, &end_packet, sizeof(struct packet), 0,
+            (struct sockaddr *)&send_addr, sizeof(send_addr) );
+
+
             bool all_negative = true;
             for (int i = 0; i < num_machines; i++) {
                 if (nack_packet.payload[i] != -1) {
@@ -620,16 +637,29 @@ int main(int argc, char* argv[]) {
                     (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
             }   
 
+            check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
+
             // if ready to end is true, send counter packet 
             if (ready_to_end) { 
+                // record terminate starting time
+                gettimeofday(&terminate_end, NULL); 
+
+                // terminate the mcast program after terminate timeout
+                if (diffTime(terminate_end, terminate_start).tv_sec > 5) {
+                    exit(0); 
+                }
+
                 // send new counter packet
                 struct packet last_counter_packet; 
                 last_counter_packet.tag = TAG_COUNTER; 
                 last_counter_packet.machine_index = machine_index; 
-                last_counter_packet.payload[machine_index - 1] = counter; 
+                for (int i = 0; i < num_machines; i++) {
+                    last_counter_packet.payload[i] = last_counters[i]; 
+                } 
                 sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                         (struct sockaddr *)&send_addr, sizeof(send_addr));
             }
+            
         }
     }
 
