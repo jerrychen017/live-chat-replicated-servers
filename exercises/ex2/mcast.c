@@ -269,7 +269,7 @@ int main(int argc, char* argv[]) {
                         */
                         bool is_full = true; 
                         while(is_full) {
-                            if (ready_to_end) { // to avoid infinite loop
+                            if (ready_to_end || all_finished(finished, num_machines)) { // to avoid infinite loop
                                 break;
                             }
                             bool deliverable[num_machines]; 
@@ -461,6 +461,11 @@ int main(int argc, char* argv[]) {
 
                     case TAG_ACK:
                     {
+
+                        if (ready_to_end) { // to avoid infinite loop
+                            continue;
+                        }
+
                         acks[received_packet.machine_index - 1] = received_packet.payload[machine_index - 1];
 
                         // check if can slide the window and create new packets
@@ -579,8 +584,9 @@ int main(int argc, char* argv[]) {
                             finished[received_packet.machine_index - 1] = true;
                             nack_packet.payload[received_packet.machine_index - 1] = -1; 
                             // TODO: how to end?
-                            check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
+                            // check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
                         }
+                        check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
                         break;
                     }
 
