@@ -6,7 +6,7 @@
 
 int main(int argc, char* argv[]) {
     // TODO: error checking on atoi 
-
+    
     // args error checking
     if (argc != 5) {
         printf("Mcast usage: mcast <num_of_packets> <machine_index> "
@@ -188,7 +188,7 @@ int main(int argc, char* argv[]) {
         last_counters[i] = -1;
     }
 
-    print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
+    // print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
 
 
     bool ready_to_end = false; 
@@ -223,8 +223,8 @@ int main(int argc, char* argv[]) {
                 }
 
                 // TODO: print for debugging, delete later
-                print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
-                print_packet(&received_packet, num_machines);
+                // print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
+                // print_packet(&received_packet, num_machines);
 
                 switch (received_packet.tag) {
                     case TAG_START:
@@ -670,6 +670,30 @@ int main(int argc, char* argv[]) {
                 sendto(ss, &nack_packet, sizeof(struct packet), 0,
                     (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
             }   
+
+
+            
+            // min(ack) == num_packets (all other machines delivered my packets)
+            int min_ack = acks[0]; 
+            for (int i = 0; i < num_machines; i++) { 
+                if (acks[i] < min_ack) {
+                    min_ack = acks[i];
+                }
+            }
+
+            // REPEATING check_end
+            if (all_finished(finished, num_machines) && min_ack == num_packets) {
+                ready_to_end = true; 
+                struct packet last_counter_packet; 
+                last_counter_packet.tag = TAG_COUNTER; 
+                last_counter_packet.machine_index = machine_index; 
+                last_counters[machine_index - 1] = counter;
+                for (int i = 0; i < num_machines; i++) {
+                    last_counter_packet.payload[i] = last_counters[i]; 
+                }
+                sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
+                            (struct sockaddr *)&send_addr, sizeof(send_addr));
+            }
 
             check_end(fd, acks, finished, last_counters, num_machines, machine_index, num_packets, counter, &ready_to_end, ss, &send_addr);
 

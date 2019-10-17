@@ -1,7 +1,7 @@
 #ifndef PACKET_H
 #define PACKET_H
 
-#define WINDOW_SIZE 5
+#define WINDOW_SIZE 200
 
 #define TAG_START 0
 #define TAG_DATA 1
