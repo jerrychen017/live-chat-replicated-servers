@@ -27,6 +27,9 @@ struct timeval diffTime(struct timeval left, struct timeval right)
 unsigned int convert(unsigned int packet_index, unsigned int start_packet_index,
                      unsigned int start_array_index)
 {
+
+    // TODO: what if packet_index is too large and (packet_index - start_packet_index + start_array_index)
+    // is greater than 2 * WINDOW_SIZE? 
   return (packet_index - start_packet_index + start_array_index) % WINDOW_SIZE;
 }
 
@@ -227,4 +230,14 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
 
     printf("------------------------------STATUS report END------------------------------\n\n");
 
+}
+
+// checks if my machine has finished delivering packets of all machines
+bool all_finished(bool *finished, int num_machines) {
+    bool is_finished = true; 
+    for (int i = 0; i < num_machines; i++) {
+        is_finished = is_finished && finished[i];
+    }
+
+    return is_finished; 
 }

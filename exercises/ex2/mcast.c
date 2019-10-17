@@ -218,7 +218,7 @@ int main(int argc, char* argv[]) {
                 }
 
                 if (ready_to_end) {
-                    // record terminate starting time
+                    // record termination starting time
                     gettimeofday(&terminate_start, NULL); 
                 }
 
@@ -227,7 +227,6 @@ int main(int argc, char* argv[]) {
                 print_packet(&received_packet, num_machines);
 
                 switch (received_packet.tag) {
-
                     case TAG_START:
                     {
                         printf("Warning: receive START packet in the middle of delivery\n");
@@ -235,7 +234,12 @@ int main(int argc, char* argv[]) {
                     }
 
                     case TAG_DATA:
-                    {
+                    {   
+                        // continue if my machine has finished delivery
+                        if (all_finished(finished, num_machines)) {
+                            continue;
+                        }
+
                         // if received packet index not in range
                         if (!(received_packet.packet_index >= start_packet_indices[received_packet.machine_index - 1]
                             && received_packet.packet_index < start_packet_indices[received_packet.machine_index - 1] + WINDOW_SIZE)) {
@@ -245,6 +249,7 @@ int main(int argc, char* argv[]) {
                             printf("range is %d - %d\n", start_packet_indices[received_packet.machine_index - 1], start_packet_indices[received_packet.machine_index - 1] + WINDOW_SIZE - 1);
                             break;
                         }
+
                         // insert packet to table
                         int insert_index = convert(received_packet.packet_index, start_packet_indices[received_packet.machine_index - 1], start_array_indices[received_packet.machine_index - 1]);
                         // checks if the target spot is occupied
@@ -258,34 +263,47 @@ int main(int argc, char* argv[]) {
                         }
                     
                         // try to deliver packets
+                        /*
+                        We define is_full to be true when the all packets with the next delivered 
+                        counter has arrived or has been generated 
+                        */
                         bool is_full = true; 
                         while(is_full) {
                             bool deliverable[num_machines]; 
+                            // initialize all deliverables to false 
                             for (int i = 0; i < num_machines; i++) {
                                 deliverable[i] = false;
                             }
+
+                            // update deliverables and check if a row is full
                             for (int i = 0; i < num_machines; i++) {
                                 if (finished[i]) { // skips this machine if it has already ended
                                     nack_packet.payload[i] = -1; 
                                     continue; 
                                 }
                                 if (i != machine_index - 1) { // other machine case
-                                    if (table[i][start_array_indices[i]].tag != TAG_EMPTY) {
+                                    if (table[i][start_array_indices[i]].tag != TAG_EMPTY) { // next packet is in the table
+                                        // deliverable if next packet has a counter that should be delivered next
                                         deliverable[i] = (table[i][start_array_indices[i]].counter == last_delivered_counter + 1);
-                                        nack_packet.payload[i] = -1; 
-                                    } else {
+                                        nack_packet.payload[i] = -1; // packet exits, don't nack
+                                    } else { // packet hasn't arrived yet
                                         deliverable[i] = false; 
-                                        is_full = false; 
-                                        nack_packet.payload[i] = start_packet_indices[i]; 
+                                        nack_packet.payload[i] = start_packet_indices[i]; // missing packet, nack 
+                                        if (!deliverable[i]) { // row is not full if a cannot deliver a non-finished machine 
+                                            is_full = false;
+                                        }
                                     }
                                 } else { // my machine case 
                                     int index = convert(acks[i] + 1, start_packet_indices[i], start_array_indices[i]);
                                     // TODO: special case: if new packet has not been generated?
                                     deliverable[i] = (created_packets[index].counter == last_delivered_counter + 1);
-                                    if (!deliverable[i]) {
+
+
+                                    if (acks[i] + 1 > num_created) { // hasn't been created yet
                                         is_full = false;
                                     }
                                 }
+                                
                             }
                             if (is_full) {
                                 // deliver

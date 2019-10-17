@@ -24,4 +24,6 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
     int *start_packet_indices, int *end_indices, bool* finished, int *last_counters,
     int counter, int last_delivered_counter, int num_created, int machine_index, int num_machines);
 
+// checks if my machine has finished delivering packets of all machines
+bool all_finished(bool *finished, int num_machines);
 #endif
