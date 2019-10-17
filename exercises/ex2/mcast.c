@@ -282,6 +282,9 @@ int main(int argc, char* argv[]) {
                                     int index = convert(acks[i] + 1, start_packet_indices[i], start_array_indices[i]);
                                     // TODO: special case: if new packet has not been generated?
                                     deliverable[i] = (created_packets[index].counter == last_delivered_counter + 1);
+                                    if (!deliverable[i]) {
+                                        is_full = false;
+                                    }
                                 }
                             }
                             if (is_full) {
@@ -315,6 +318,9 @@ int main(int argc, char* argv[]) {
                                                 }
                                             }
                                             printf("MIN is %d\n", min);
+                                            printf("start_packet_index is %d\n", start_packet_indices[machine_index - 1]);
+                                            printf("num_created is %d\n", num_created);
+                                            printf("num_packet is %d\n", num_packets);
 
                                             while (min >= start_packet_indices[i] && num_created < num_packets) {
                                                 printf("slide window\n");
@@ -511,6 +517,7 @@ int main(int argc, char* argv[]) {
 
                     case TAG_NACK:
                     {
+                        printf("got a nack\n");
                         for (int i = 0; i < num_machines; i++) {
                             int requested_packet_index = received_packet.payload[i];
                             if (requested_packet_index != -1) {

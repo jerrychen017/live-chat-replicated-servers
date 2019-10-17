@@ -49,6 +49,11 @@ void check_end(FILE *fd, int *acks, bool *finished, int *last_counters, int num_
             min_ack = acks[i];
         }
     }
+
+    if (finished[machine_index - 1] && last_counters[machine_index - 1] == -1) {
+        last_counters[machine_index - 1] = counter;
+    }
+
     if (min_ack == num_packets) {
         fclose(fd);
         last_counters[machine_index  - 1] = counter; 
