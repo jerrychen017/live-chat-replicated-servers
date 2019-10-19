@@ -11,12 +11,6 @@ struct timeval diffTime(struct timeval left, struct timeval right);
  */
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
-/* Known end condition:
-*  1. Other machines have received all my packets (min(ack) == num_packets)
-*  2. Deliver all packets from other machines
-*/
-void check_end(FILE *fd, int *acks, bool *finished, int *last_counters, int num_machines, int machine_index, int num_packets, int counter, bool * ready_to_end, int ss, struct sockaddr_in * send_addr);
-
 // Print packet information for debugging
 void print_packet(struct packet *to_print, int num_machines);
 
@@ -25,5 +19,13 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
     int counter, int last_delivered_counter, int num_created, int machine_index, int num_machines);
 
 // checks if my machine has finished delivering packets of all machines
-bool all_finished(bool *finished, int num_machines);
+bool check_finished_delivery(bool *finished, int * last_counters, int num_machines, int machine_index, int counter);
+
+bool check_acks(int * acks, int num_machines, int num_packets);
+
+/*
+* Slide windows
+*/
+
+
 #endif

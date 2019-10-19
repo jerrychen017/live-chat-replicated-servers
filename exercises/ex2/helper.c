@@ -27,54 +27,7 @@ struct timeval diffTime(struct timeval left, struct timeval right)
 unsigned int convert(unsigned int packet_index, unsigned int start_packet_index,
                      unsigned int start_array_index)
 {
-
-    // TODO: what if packet_index is too large and (packet_index - start_packet_index + start_array_index)
-    // is greater than 2 * WINDOW_SIZE? 
   return (packet_index - start_packet_index + start_array_index) % WINDOW_SIZE;
-}
-
-void check_end(FILE *fd, int *acks, bool *finished, int *last_counters, int num_machines, int machine_index, int num_packets, int counter, bool * ready_to_end ,int ss, struct sockaddr_in * send_addr)
-{
-    if (*ready_to_end) {
-        return; 
-    }
-    // all finished array entries are true 
-    for (int i = 0; i < num_machines; i++) {
-        if (!finished[i]) {
-            return; 
-        } 
-    }
-
-    // min(ack) == num_packets (all other machines delivered my packets)
-    int min_ack = acks[0]; 
-    for (int i = 0; i < num_machines; i++) { 
-        if (acks[i] < min_ack) {
-            min_ack = acks[i];
-        }
-    }
-
-    if (all_finished(finished, num_machines) && last_counters[machine_index - 1] == -1) {
-        last_counters[machine_index - 1] = counter;
-    }
-
-    if (min_ack == num_packets) {
-        fclose(fd);
-        last_counters[machine_index  - 1] = counter; 
-        *ready_to_end = true; 
-        printf("=========================\n");
-        printf("       Ready to end\n");
-        printf("=========================\n");
-        
-        struct packet last_counter_packet; 
-        last_counter_packet.tag = TAG_COUNTER; 
-        last_counter_packet.machine_index = machine_index; 
-        last_counters[machine_index - 1] = counter;
-        for (int i = 0; i < num_machines; i++) {
-            last_counter_packet.payload[i] = last_counters[i]; 
-        }
-        sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
-                                            (struct sockaddr *)&(*send_addr), sizeof((*send_addr)) );
-    }
 }
 
 void print_packet(struct packet *to_print, int num_machines) {
@@ -237,12 +190,34 @@ void print_status(struct packet *created_packets, int *acks, struct packet *tabl
 
 }
 
-// checks if my machine has finished delivering packets of all machines
-bool all_finished(bool *finished, int num_machines) {
+/* checks if my machine has finished delivering packets of all machines
+if finished, update last_counter of this machine
+*/
+bool check_finished_delivery(bool *finished, int * last_counters, int num_machines, int machine_index, int counter) {
     bool is_finished = true; 
     for (int i = 0; i < num_machines; i++) {
         is_finished = is_finished && finished[i];
     }
-
+    
+    if (is_finished) {
+        last_counters[machine_index - 1] = counter;
+    }
     return is_finished; 
 }
+
+/*
+Checks if all  other machines have finished delivering all my packets
+*/
+bool check_acks(int * acks, int num_machines, int num_packets) { 
+    // min(ack) == num_packets (all other machines delivered my packets)
+    int min_ack = acks[0]; 
+    for (int i = 0; i < num_machines; i++) { 
+        if (acks[i] < min_ack) {
+            min_ack = acks[i];
+        }
+    }
+    return min_ack == num_packets;
+}
+
+// void deliver(int * last_delivered_counters, int num_machines, int machine_index, 
+// bool * finished, bool * deliverable, int * acks, int * start_packet_indices, int * start_array_indices, struct packet nack_packet,)
