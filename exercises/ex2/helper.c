@@ -3,13 +3,6 @@
 #include "packet.h"
 #include "helper.h"
 
-/*
-utils.c utils.h 
-helper.c helper.h 
-
-
-*/ 
-
 struct timeval diffTime(struct timeval left, struct timeval right)
 {
     struct timeval diff;
