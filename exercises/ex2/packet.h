@@ -11,7 +11,12 @@
 #define TAG_EMPTY 5
 #define TAG_COUNTER 6 // message that contains the last counter this machine delivered 
 
-#define DELIVERY_GAP 5
+/**
+ * Tuning hyperparameters
+ */
+#define DELIVERY_GAP WINDOW_SIZE / 10
+#define TIMEOUT 10000
+#define NUM_EXIT_SIGNALS 5
 
 struct packet {
     unsigned int tag;
