@@ -107,7 +107,7 @@ void print_packet(struct packet *to_print, int num_machines) {
     }
 }
 
-void print_status(struct packet *created_packets, int *acks, struct packet *table[WINDOW_SIZE], int *start_array_indices, 
+void print_status(struct packet *created_packets, int *acks, int *start_array_indices, 
     int *start_packet_indices, int *end_indices, bool* finished, int *last_counters,
     int counter, int last_delivered_counter, int num_created, int machine_index, int num_machines) {
 

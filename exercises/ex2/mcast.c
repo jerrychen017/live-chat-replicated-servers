@@ -227,7 +227,7 @@ int main(int argc, char *argv[])
         last_counters[i] = -1;
     }
 
-    print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
+    print_status(created_packets, acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
     bool ready_to_end = false;
 
     // struct timeval terminate_start;
@@ -269,7 +269,7 @@ int main(int argc, char *argv[])
                 }
 
                 // TODO: print for debugging, delete later
-                print_status(created_packets, acks, table, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
+                print_status(created_packets, acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
                 print_packet(&received_packet, num_machines);
 
                 switch (received_packet.tag)
