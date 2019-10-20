@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <sys/time.h>
 #include "net_include.h"
 #include "packet.h"
 #include "helper.h"
@@ -177,6 +178,10 @@ int main(int argc, char *argv[])
     {
         printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
     }
+
+    // record starting time of transfer   
+    struct timeval start_time;
+    gettimeofday(&start_time, NULL);
 
     // initialize created_packets
     int num_created = 0;
@@ -758,9 +763,18 @@ int main(int argc, char *argv[])
                             sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
+
                         printf("=========================\n");
                         printf("           EXIT\n");
                         printf("=========================\n");
+
+                        // record starting time of transfer   
+                        struct timeval end_time;
+                        gettimeofday(&end_time, NULL);
+                        struct timeval diff_time = diffTime(end_time, start_time);
+                        double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
+                        printf("Trasmission time is %.2f seconds\n", seconds);
+
                         exit(0);
                     }
                 }

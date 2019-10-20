@@ -1,7 +1,7 @@
 #ifndef PACKET_H
 #define PACKET_H
 
-#define WINDOW_SIZE 10
+#define WINDOW_SIZE 300
 
 #define TAG_START 0
 #define TAG_DATA 1
@@ -15,8 +15,8 @@
  * Tuning hyperparameters
  */
 #define DELIVERY_GAP WINDOW_SIZE / 10
-#define TIMEOUT_SEC 2
-#define TIMEOUT_USEC 0
+#define TIMEOUT_SEC 0
+#define TIMEOUT_USEC 50000
 #define NUM_EXIT_SIGNALS 5
 
 struct packet {
