@@ -24,10 +24,7 @@ makes sure after start packet, we can send IP address to all other machines
 
 int main(int argc, char *argv[])
 {
-    // TODO: error checking on atoi
-    // TODO: send ack every so often (with a gap)
-    // TODO: who responds to nack? (implement explicit flow control)
-    // send IP and
+    // TODO: who responds to nack? (implement explicit flow control) unicast
 
     // args error checking
     if (argc != 5)
@@ -193,9 +190,12 @@ int main(int argc, char *argv[])
         created_packets[num_created].machine_index = machine_index;
         created_packets[num_created].packet_index = num_created + 1;
         created_packets[num_created].random_data = (rand() % 999999) + 1;
-        sendto(ss, &created_packets[num_created], sizeof(struct packet), 0,
-               (struct sockaddr *)&send_addr, sizeof(send_addr));
         num_created++;
+    }
+
+    for (int i = 0; i < NUM_TO_SEND; i++) {
+        sendto(ss, &created_packets[i], sizeof(struct packet), 0,
+               (struct sockaddr *)&send_addr, sizeof(send_addr));
     }
 
     struct packet end_packet;
@@ -260,7 +260,6 @@ int main(int argc, char *argv[])
                 if (bytes_received == 0)
                 {
                     printf("\nPacket is lost\n\n");
-                    // TODO: send ack/nack or some kind of response.
                     continue;
                 }
                 if (bytes_received != sizeof(struct packet))
@@ -652,7 +651,6 @@ int main(int argc, char *argv[])
                             if (!(requested_packet_index >= start_packet_indices[i] && requested_packet_index < start_packet_indices[i] + WINDOW_SIZE))
                             {
                                 printf("Nack packet index out of bound\n");
-                                // TODO: send ack/nack
                                 continue;
                             }
 
@@ -683,7 +681,6 @@ int main(int argc, char *argv[])
                             }
                         }
                     }
-                    // TODO: try sending using unicast
                     break;
                 }
 
