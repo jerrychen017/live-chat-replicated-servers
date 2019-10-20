@@ -244,8 +244,8 @@ int main(int argc, char *argv[])
     for (;;)
     {
         temp_mask = mask;
-        timeout.tv_sec = 0;
-        timeout.tv_usec = TIMEOUT;
+        timeout.tv_sec = TIMEOUT_SEC;
+        timeout.tv_usec = TIMEOUT_USEC;
         num = select(FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
         if (num > 0)
         {
@@ -254,7 +254,7 @@ int main(int argc, char *argv[])
                 bytes_received = recv_dbg(sr, (char *)&received_packet, sizeof(struct packet), 0);
                 if (bytes_received == 0)
                 {
-                    printf("Packet is lost\n");
+                    printf("\nPacket is lost\n\n");
                     // TODO: send ack/nack or some kind of response.
                     continue;
                 }
@@ -470,7 +470,7 @@ int main(int argc, char *argv[])
                                 { // my machine case
                                     acks[i]++;
                                     int index = convert(acks[i], start_packet_indices[i], start_array_indices[i]);
-                                    // printf("counter: %d, machine_index: %d, packet_index: %d\n", created_packets[index].counter, created_packets[index].machine_index, created_packets[index].packet_index);
+                                    printf("counter: %d, machine_index: %d, packet_index: %d\n", created_packets[index].counter, created_packets[index].machine_index, created_packets[index].packet_index);
                                     fprintf(fd, "%2d, %8d, %8d\n", machine_index, acks[i], created_packets[index].random_data);
 
                                     // if delivered last packet, mark as finished
@@ -528,6 +528,8 @@ int main(int argc, char *argv[])
                                     {
                                         printf("Warning: packet index doesn't match\n");
                                     }
+
+                                    printf("counter: %d, machine_index: %d, packet_index: %d\n", table[i][start_array_indices[i]].counter, table[i][start_array_indices[i]].machine_index, table[i][start_array_indices[i]].packet_index);
                                     fprintf(fd, "%2d, %8d, %8d\n", i + 1, start_packet_indices[i], table[i][start_array_indices[i]].random_data);
 
                                     // discard delivered packet in table
@@ -568,6 +570,12 @@ int main(int argc, char *argv[])
                                 sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                        (struct sockaddr *)&send_addr, sizeof(send_addr));
                             }
+
+                            // if finish delivery, break out of while loop
+                            if (check_finished_delivery(finished, last_counters, num_machines, machine_index, counter)) {
+                                break;
+                            }
+
                         }
                         else
                         { // not full, we have missing packets, send nack
@@ -746,6 +754,7 @@ int main(int argc, char *argv[])
                     {
                         for (int i = 0; i < NUM_EXIT_SIGNALS; i++)
                         {
+                            printf("Send COUNTER packet\n");
                             sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
