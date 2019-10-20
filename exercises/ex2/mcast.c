@@ -5,26 +5,11 @@
 #include "helper.h"
 #include "recv_dbg.h"
 
-/*
-QUESTIONS: 
-
-OFC, flow control
-termination: 
-1. we have everything 
-2. other machines ack all my packets 
-- then I'm ready to finish
-3. if all other machines are ready to finish 
- - exit 
- else 
- - exit when timeout  (if havn't heard anything from one machine for a long time, then timeout)
-
-
-makes sure after start packet, we can send IP address to all other machines
-*/
-
 int main(int argc, char *argv[])
 {
     // TODO: who responds to nack? (implement explicit flow control) unicast
+    // makes sure after start packet, we can send IP address to all other machines
+    // TODO: last big timeout
 
     // args error checking
     if (argc != 5)
@@ -232,19 +217,7 @@ int main(int argc, char *argv[])
         last_counters[i] = -1;
     }
 
-    print_status(created_packets, acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
     bool ready_to_end = false;
-
-    // struct timeval terminate_start;
-    // // initialize terminate starting time
-    // gettimeofday(&terminate_start, NULL);
-    // struct timeval terminate_end;
-
-    // struct timeval ack_start;
-    // struct timeval ack_end;
-
-    // struct timeval nack_start;
-    // struct timeval nack_end;
 
     for (;;)
     {
@@ -257,9 +230,10 @@ int main(int argc, char *argv[])
             if (FD_ISSET(sr, &temp_mask))
             {
                 bytes_received = recv_dbg(sr, (char *)&received_packet, sizeof(struct packet), 0);
+                
+                // packet is lost
                 if (bytes_received == 0)
                 {
-                    printf("\nPacket is lost\n\n");
                     continue;
                 }
                 if (bytes_received != sizeof(struct packet))
@@ -271,10 +245,6 @@ int main(int argc, char *argv[])
                     // ignore packets sent by my machine
                     continue;
                 }
-
-                // TODO: print for debugging, delete later
-                //print_status(created_packets, acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
-                //print_packet(&received_packet, num_machines);
 
                 switch (received_packet.tag)
                 {
@@ -302,11 +272,6 @@ int main(int argc, char *argv[])
                         // if received packet index not in range
                         if (!(received_packet.packet_index >= start_packet_indices[received_packet.machine_index - 1] && received_packet.packet_index < start_packet_indices[received_packet.machine_index - 1] + WINDOW_SIZE))
                         {
-                            printf("Packet index out of bound\n");
-                            printf("from machine: %d\n", received_packet.machine_index);
-                            printf("packet index: %d\n", received_packet.packet_index);
-                            printf("range is %d - %d\n", start_packet_indices[received_packet.machine_index - 1], start_packet_indices[received_packet.machine_index - 1] + WINDOW_SIZE - 1);
-
                             // TODO: send ack/nack
                             break;
                         }
@@ -344,11 +309,9 @@ int main(int argc, char *argv[])
                                 min = acks[j];
                             }
                         }
-                        printf("MIN is %d\n", min);
 
                         while (min >= start_packet_indices[machine_index - 1] && num_created < num_packets)
                         {
-                            printf("slide window\n");
 
                             // create new packet
                             created_packets[start_array_indices[machine_index - 1]].tag = TAG_DATA;
@@ -469,12 +432,10 @@ int main(int argc, char *argv[])
                                     continue;
                                 }
 
-                                printf("Machine %d write to file\n", i + 1);
                                 if (i + 1 == machine_index)
                                 { // my machine case
                                     acks[i]++;
                                     int index = convert(acks[i], start_packet_indices[i], start_array_indices[i]);
-                                    printf("counter: %d, machine_index: %d, packet_index: %d\n", created_packets[index].counter, created_packets[index].machine_index, created_packets[index].packet_index);
                                     fprintf(fd, "%2d, %8d, %8d\n", machine_index, acks[i], created_packets[index].random_data);
 
                                     // if delivered last packet, mark as finished
@@ -493,12 +454,9 @@ int main(int argc, char *argv[])
                                             min = acks[j];
                                         }
                                     }
-                                    printf("MIN is %d\n", min);
 
                                     while (min >= start_packet_indices[i] && num_created < num_packets)
                                     {
-                                        printf("slide window\n");
-
                                         // create new packet
                                         created_packets[start_array_indices[i]].tag = TAG_DATA;
                                         counter++;
@@ -533,7 +491,6 @@ int main(int argc, char *argv[])
                                         printf("Warning: packet index doesn't match\n");
                                     }
 
-                                    printf("counter: %d, machine_index: %d, packet_index: %d\n", table[i][start_array_indices[i]].counter, table[i][start_array_indices[i]].machine_index, table[i][start_array_indices[i]].packet_index);
                                     fprintf(fd, "%2d, %8d, %8d\n", i + 1, start_packet_indices[i], table[i][start_array_indices[i]].random_data);
 
                                     // discard delivered packet in table
@@ -571,7 +528,6 @@ int main(int argc, char *argv[])
                                     }
                                     sendto(ss, &ack_packet, sizeof(struct packet), 0,
                                            (struct sockaddr *)&send_addr, sizeof(send_addr));
-                                    printf("Send ACK packet\n");
                                 }
 
                             } // end of deliver for loop
@@ -606,19 +562,6 @@ int main(int argc, char *argv[])
                         }
                         else
                         { // not full, we have missing packets, send nack
-
-                            printf("Send NACK packet\n");
-                            for (int i = 0; i < num_machines; i++)
-                            {
-                                if (nack_packet.payload[i] == -1)
-                                {
-                                    printf("machine %d nack: none\n", i + 1);
-                                }
-                                else
-                                {
-                                    printf("machine %d nack: %d\n", i + 1, nack_packet.payload[i]);
-                                }
-                            }
                             sendto(ss, &nack_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
@@ -650,7 +593,6 @@ int main(int argc, char *argv[])
                             // if received packet index not in range
                             if (!(requested_packet_index >= start_packet_indices[i] && requested_packet_index < start_packet_indices[i] + WINDOW_SIZE))
                             {
-                                printf("Nack packet index out of bound\n");
                                 continue;
                             }
 
@@ -658,14 +600,12 @@ int main(int argc, char *argv[])
                             { // my machine case
                                 if (requested_packet_index > num_packets)
                                 {
-                                    printf("Send END packet\n");
                                     sendto(ss, &end_packet, sizeof(struct packet), 0,
                                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                                 }
                                 else
                                 {
                                     int index = convert(requested_packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
-                                    printf("Retransmit packet with packet index %d\n", requested_packet_index);
                                     sendto(ss, &created_packets[index], sizeof(struct packet), 0,
                                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                                 }
@@ -760,7 +700,6 @@ int main(int argc, char *argv[])
                     {
                         for (int i = 0; i < NUM_EXIT_SIGNALS; i++)
                         {
-                            printf("Send COUNTER packet\n");
                             sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
@@ -786,14 +725,13 @@ int main(int argc, char *argv[])
         {
             // timeout
             // send ack
-            printf("TIMEOUT!\n");
+            //printf("TIMEOUT!\n");
 
             //  && check_acks(acks, num_machines, num_packets))
             if (!ready_to_end)
             {
                 if (!check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
                 {
-                    printf("Send ACK packet\n");
                     struct packet ack_packet;
                     ack_packet.tag = TAG_ACK;
                     ack_packet.machine_index = machine_index;
@@ -804,31 +742,17 @@ int main(int argc, char *argv[])
                     sendto(ss, &ack_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
 
-                    printf("Send NACK packet\n");
-                    for (int i = 0; i < num_machines; i++)
-                    {
-                        if (nack_packet.payload[i] == -1)
-                        {
-                            printf("machine %d nack: none\n", i + 1);
-                        }
-                        else
-                        {
-                            printf("machine %d nack: %d\n", i + 1, nack_packet.payload[i]);
-                        }
-                    }
                     sendto(ss, &nack_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                 }
                 else
                 { // I finished delivery
-                    printf("Send END packet\n");
                     sendto(ss, &end_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                 }
 
                 if (!check_acks(acks, num_machines, num_packets))
                 {
-                    printf("Send latest created packet with packet index %d\n", num_created);
                     int index = convert(num_created, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
                     // send highest generated packet
                     sendto(ss, &created_packets[index], sizeof(struct packet), 0,
@@ -837,7 +761,6 @@ int main(int argc, char *argv[])
             }
             else
             {
-                printf("Send COUNTER packet\n");
                 struct packet last_counter_packet;
                 last_counter_packet.tag = TAG_COUNTER;
                 last_counter_packet.machine_index = machine_index;
@@ -847,14 +770,6 @@ int main(int argc, char *argv[])
                 }
                 sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                        (struct sockaddr *)&send_addr, sizeof(send_addr));
-
-                // // record terminate starting time
-                // gettimeofday(&terminate_end, NULL);
-                // // terminate the mcast program after terminate timeout
-                // if (diffTime(terminate_end, terminate_start).tv_sec > 20)
-                // {
-                //     exit(0);
-                // }
             }
         }
     }
