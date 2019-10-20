@@ -16,7 +16,7 @@ mcast.o: mcast.c net_include.h packet.h helper.h recv_dbg.h
 start_mcast.o: start_mcast.c net_include.h packet.h
 	$(CC) $(CFLAGS) start_mcast.c
 
-helper.o: helper.c helper.h net_include.h
+helper.o: helper.c helper.h net_include.h packet.h
 	$(CC) $(CFLAGS) helper.c
 
 recv_dbg.o: recv_dbg.c
