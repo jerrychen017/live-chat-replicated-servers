@@ -25,10 +25,7 @@ int main() {
     struct packet start_packet;
     start_packet.tag = TAG_START;
 
-    int result = sendto( ss, &start_packet, sizeof(struct packet), 0, 
-                    (struct sockaddr *)&send_addr, sizeof(send_addr) );
-
-    printf("Result is %d\n", result);
+    sendto( ss, &start_packet, sizeof(struct packet), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
 
     return 0;
 

@@ -340,6 +340,7 @@ int main(int argc, char *argv[])
                                 min = acks[j];
                             }
                         }
+                        printf("MIN is %d\n", min);
 
                         while (min >= start_packet_indices[machine_index - 1] && num_created < num_packets)
                         {
@@ -367,13 +368,40 @@ int main(int argc, char *argv[])
                             start_array_indices[machine_index - 1] = (start_array_indices[machine_index - 1] + 1) % WINDOW_SIZE;
                             start_packet_indices[machine_index - 1]++;
                         }
+
+                        // check if ready_to_end after updating ack
+                        if (!ready_to_end && check_finished_delivery(finished, last_counters, num_machines, machine_index, counter) && check_acks(acks, num_machines, num_packets))
+                        {
+                            fclose(fd);
+                            ready_to_end = true;
+
+                            printf("=========================\n");
+                            printf("       Ready to end\n");
+                            printf("=========================\n");
+
+                            struct packet last_counter_packet;
+                            last_counter_packet.tag = TAG_COUNTER;
+                            last_counter_packet.machine_index = machine_index;
+                            last_counters[machine_index - 1] = counter;
+                            for (int i = 0; i < num_machines; i++)
+                            {
+                                last_counter_packet.payload[i] = last_counters[i];
+                            }
+                            sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
+                                   (struct sockaddr *)&send_addr, sizeof(send_addr));
+                        }
+                    }
+
+                    if (check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
+                    {
+                        continue;
                     }
 
                     // try to deliver packets
                     /*
                         We define is_full to be true when the all packets with the next delivered 
                         counter has arrived or has been generated 
-                        */
+                    */
                     bool is_full = true;
                     while (is_full)
                     {
@@ -437,10 +465,10 @@ int main(int argc, char *argv[])
                                     continue;
                                 }
 
+                                printf("Machine %d write to file\n", i + 1);
                                 if (i + 1 == machine_index)
                                 { // my machine case
                                     acks[i]++;
-                                    // printf("My machine case: write to file\n");
                                     int index = convert(acks[i], start_packet_indices[i], start_array_indices[i]);
                                     // printf("counter: %d, machine_index: %d, packet_index: %d\n", created_packets[index].counter, created_packets[index].machine_index, created_packets[index].packet_index);
                                     fprintf(fd, "%2d, %8d, %8d\n", machine_index, acks[i], created_packets[index].random_data);
@@ -500,8 +528,6 @@ int main(int argc, char *argv[])
                                     {
                                         printf("Warning: packet index doesn't match\n");
                                     }
-                                    printf("Other machines case: write to file\n");
-                                    // printf("counter: %d, machine_index: %d, packet_index: %d\n", table[i][start_array_indices[i]].counter, table[i][start_array_indices[i]].machine_index, table[i][start_array_indices[i]].packet_index);
                                     fprintf(fd, "%2d, %8d, %8d\n", i + 1, start_packet_indices[i], table[i][start_array_indices[i]].random_data);
 
                                     // discard delivered packet in table
@@ -520,6 +546,8 @@ int main(int argc, char *argv[])
 
                                 } // end of
                             }     // end of deliver for loop
+
+                            // check if ready_to_end after each delivery
                             if (!ready_to_end && check_finished_delivery(finished, last_counters, num_machines, machine_index, counter) && check_acks(acks, num_machines, num_packets))
                             {
                                 fclose(fd);
@@ -585,7 +613,6 @@ int main(int argc, char *argv[])
 
                 case TAG_NACK:
                 {
-                    printf("got a nack\n");
                     for (int i = 0; i < num_machines; i++)
                     {
                         int requested_packet_index = received_packet.payload[i];
@@ -766,12 +793,14 @@ int main(int argc, char *argv[])
                 }
                 else
                 { // I finished delivery
+                    printf("Send END packet\n");
                     sendto(ss, &end_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                 }
 
                 if (!check_acks(acks, num_machines, num_packets))
                 {
+                    printf("Send latest created packet with packet index %d\n", num_created);
                     int index = convert(num_created, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1]);
                     // send highest generated packet
                     sendto(ss, &created_packets[index], sizeof(struct packet), 0,
@@ -780,6 +809,7 @@ int main(int argc, char *argv[])
             }
             else
             {
+                printf("Send COUNTER packet\n");
                 struct packet last_counter_packet;
                 last_counter_packet.tag = TAG_COUNTER;
                 last_counter_packet.machine_index = machine_index;
