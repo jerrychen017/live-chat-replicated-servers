@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
         printf("Warning: number of bytes in the received pakcet does not equal to size of packet");
     }
 
-    // record starting time of transfer   
+    // record starting time of transfer
     struct timeval start_time;
     gettimeofday(&start_time, NULL);
 
@@ -274,8 +274,8 @@ int main(int argc, char *argv[])
                 }
 
                 // TODO: print for debugging, delete later
-                print_status(created_packets, acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
-                print_packet(&received_packet, num_machines);
+                //print_status(created_packets, acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
+                //print_packet(&received_packet, num_machines);
 
                 switch (received_packet.tag)
                 {
@@ -551,8 +551,31 @@ int main(int argc, char *argv[])
                                         nack_packet.payload[i] = -1;
                                     }
 
-                                } // end of
-                            }     // end of deliver for loop
+                                } // end of if
+
+                                if (last_delivered_counter % DELIVERY_GAP == 0 || check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
+                                {
+                                    // send ack
+                                    struct packet ack_packet;
+                                    ack_packet.tag = TAG_ACK;
+                                    ack_packet.machine_index = machine_index;
+                                    for (int i = 0; i < num_machines; i++)
+                                    {
+                                        if (i + 1 == machine_index)
+                                        {
+                                            ack_packet.payload[i] = acks[i];
+                                        }
+                                        else
+                                        {
+                                            ack_packet.payload[i] = start_packet_indices[i] - 1;
+                                        }
+                                    }
+                                    sendto(ss, &ack_packet, sizeof(struct packet), 0,
+                                           (struct sockaddr *)&send_addr, sizeof(send_addr));
+                                    printf("Send ACK packet\n");
+                                }
+
+                            } // end of deliver for loop
 
                             // check if ready_to_end after each delivery
                             if (!ready_to_end && check_finished_delivery(finished, last_counters, num_machines, machine_index, counter) && check_acks(acks, num_machines, num_packets))
@@ -577,10 +600,10 @@ int main(int argc, char *argv[])
                             }
 
                             // if finish delivery, break out of while loop
-                            if (check_finished_delivery(finished, last_counters, num_machines, machine_index, counter)) {
+                            if (check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
+                            {
                                 break;
                             }
-
                         }
                         else
                         { // not full, we have missing packets, send nack
@@ -601,25 +624,6 @@ int main(int argc, char *argv[])
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
                     } // end of while loop
-
-                    // send ack
-                    struct packet ack_packet;
-                    ack_packet.tag = TAG_ACK;
-                    ack_packet.machine_index = machine_index;
-                    for (int i = 0; i < num_machines; i++)
-                    {
-                        if (i + 1 == machine_index)
-                        {
-                            ack_packet.payload[i] = acks[i];
-                        }
-                        else
-                        {
-                            ack_packet.payload[i] = start_packet_indices[i] - 1;
-                        }
-                    }
-                    sendto(ss, &ack_packet, sizeof(struct packet), 0,
-                           (struct sockaddr *)&send_addr, sizeof(send_addr));
-                    printf("Send ACK packet\n");
 
                     break;
                 }
@@ -768,11 +772,11 @@ int main(int argc, char *argv[])
                         printf("           EXIT\n");
                         printf("=========================\n");
 
-                        // record starting time of transfer   
+                        // record starting time of transfer
                         struct timeval end_time;
                         gettimeofday(&end_time, NULL);
                         struct timeval diff_time = diffTime(end_time, start_time);
-                        double seconds = diff_time.tv_sec + ((double) diff_time.tv_usec) / 1000000;
+                        double seconds = diff_time.tv_sec + ((double)diff_time.tv_usec) / 1000000;
                         printf("Trasmission time is %.2f seconds\n", seconds);
 
                         exit(0);
@@ -792,6 +796,7 @@ int main(int argc, char *argv[])
             {
                 if (!check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
                 {
+                    printf("Send ACK packet\n");
                     struct packet ack_packet;
                     ack_packet.tag = TAG_ACK;
                     ack_packet.machine_index = machine_index;
