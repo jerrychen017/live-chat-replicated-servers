@@ -758,6 +758,9 @@ int main(int argc, char *argv[])
                             sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
+                        printf("=========================\n");
+                        printf("           EXIT\n");
+                        printf("=========================\n");
                         exit(0);
                     }
                 }

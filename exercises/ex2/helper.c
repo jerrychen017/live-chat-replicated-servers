@@ -100,6 +100,13 @@ void print_packet(struct packet *to_print, int num_machines) {
         {
             printf("Receive COUNTER packet\n");
             printf("from machine: %d\n", to_print->machine_index);
+            for (int i = 0; i < num_machines; i++) {
+                if (to_print->payload[i] != -1) {
+                    printf("machine %d counter: %d\n", i + 1, to_print->payload[i]);
+                } else {
+                    printf("machine %d counter: unknown\n", i + 1);
+                }
+            }
             printf("%s\n", divider);
             break;
         }
