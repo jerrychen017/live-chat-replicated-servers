@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
     struct packet *received_packet = malloc(sizeof(struct packet));
 
     // internal data structures
-    struct packet * created_packets[WINDOW_SIZE];
+    struct packet *created_packets[WINDOW_SIZE];
     // struct packet ** created_packets = malloc(WINDOW_SIZE * sizeof(struct packet *));
     for (int i = 0; i < WINDOW_SIZE; i++) {
         created_packets[i] = NULL;
@@ -174,11 +174,11 @@ int main(int argc, char *argv[])
 
     // initialize created_packets
     int num_created = 0;
+    struct packet *data_packet = NULL;
     while (num_created < num_packets && num_created < WINDOW_SIZE)
     {
-
         // create new packet
-        struct packet *data_packet = malloc(sizeof(struct packet));
+        data_packet = malloc(sizeof(struct packet)+1400);
         data_packet->tag = TAG_DATA;
         counter++;
         data_packet->counter = counter;
@@ -188,6 +188,7 @@ int main(int argc, char *argv[])
         data_packet->packet_index = num_created + 1;
         num_created++;
         data_packet->random_data = (rand() % 999999) + 1;
+        // data_packet->payload = (int *)malloc(1400);
 
         created_packets[num_created] = data_packet;
     }
@@ -333,7 +334,7 @@ int main(int argc, char *argv[])
                         {
 
                             // create new packet
-                            struct packet *data_packet = malloc(sizeof(struct packet));
+                            data_packet = malloc(sizeof(struct packet)+1400);
                             // created_packets[start_array_indices[machine_index - 1]].tag = TAG_DATA;
                             data_packet->tag = TAG_DATA;
                             counter++;
@@ -346,6 +347,7 @@ int main(int argc, char *argv[])
                             num_created++;
                             // created_packets[start_array_indices[machine_index - 1]].random_data = (rand() % 999999) + 1;
                             data_packet->random_data = (rand() % 999999) + 1;
+                            // data_packet->payload = (int *)malloc(1400);
                             if (created_packets[start_array_indices[machine_index - 1]] != NULL)
                             {
                                 free(created_packets[start_array_indices[machine_index - 1]]);
@@ -489,7 +491,7 @@ int main(int argc, char *argv[])
                                     while (min >= start_packet_indices[i] && num_created < num_packets)
                                     {
                                         // create new packet
-                                        struct packet *data_packet = malloc(sizeof(struct packet));
+                                        data_packet = malloc(sizeof(struct packet)+1400);
                                         // created_packets[start_array_indices[machine_index - 1]].tag = TAG_DATA;
                                         data_packet->tag = TAG_DATA;
                                         counter++;
@@ -502,6 +504,8 @@ int main(int argc, char *argv[])
                                         num_created++;
                                         // created_packets[start_array_indices[machine_index - 1]].random_data = (rand() % 999999) + 1;
                                         data_packet->random_data = (rand() % 999999) + 1;
+                                        // data_packet->payload = (int *)malloc(1400);
+                                        
                                         if (created_packets[start_array_indices[machine_index - 1]] != NULL)
                                         {
                                             free(created_packets[start_array_indices[machine_index - 1]]);
