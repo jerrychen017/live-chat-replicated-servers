@@ -245,6 +245,7 @@ int main(int argc, char *argv[])
                 // packet is lost
                 if (bytes_received == 0)
                 {
+                    free(received_packet);
                     continue;
                 }
                 if (bytes_received != sizeof(struct packet))
@@ -253,6 +254,7 @@ int main(int argc, char *argv[])
                 }
                 if (received_packet->machine_index == machine_index)
                 {
+                    free(received_packet);
                     // ignore packets sent by my machine
                     continue;
                 }
@@ -262,6 +264,7 @@ int main(int argc, char *argv[])
                 case TAG_START:
                 {
                     printf("Warning: receive START packet in the middle of delivery\n");
+                    free(received_packet);
                     break;
                 }
 
@@ -277,6 +280,7 @@ int main(int argc, char *argv[])
                         if (ready_to_end || check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
                         {
                             // TODO: send ack/ end /
+                            free(received_packet);
                             continue;
                         }
 
@@ -284,7 +288,8 @@ int main(int argc, char *argv[])
                         if (!(received_packet->packet_index >= start_packet_indices[received_packet->machine_index - 1] && received_packet->packet_index < start_packet_indices[received_packet->machine_index - 1] + WINDOW_SIZE))
                         {
                             // TODO: send ack/nack
-                            break;
+                            free(received_packet);
+                            continue;
                         }
 
                         // insert packet to table
@@ -293,6 +298,9 @@ int main(int argc, char *argv[])
                         if (table[received_packet->machine_index - 1][insert_index] == NULL)
                         {
                             table[received_packet->machine_index - 1][insert_index] = received_packet;
+                        } else {
+                            free(received_packet);
+                            continue;
                         }
 
                         // adopt the larger counter
@@ -306,6 +314,7 @@ int main(int argc, char *argv[])
 
                         if (ready_to_end || check_acks(acks, num_machines, num_packets))
                         { // to avoid infinite loop
+                            free(received_packet);
                             continue;
                         }
 
@@ -381,6 +390,7 @@ int main(int argc, char *argv[])
 
                     if (check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
                     {
+                        free(received_packet);
                         continue;
                     }
 
@@ -594,7 +604,7 @@ int main(int argc, char *argv[])
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
                     } // end of while loop
-
+                    free(received_packet);
                     break;
                 }
 
@@ -649,6 +659,7 @@ int main(int argc, char *argv[])
                             }
                         }
                     }
+                    free(received_packet);
                     break;
                 }
 
@@ -682,7 +693,7 @@ int main(int argc, char *argv[])
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
                     }
-
+                    free(received_packet);
                     break;
                 }
 
@@ -742,9 +753,26 @@ int main(int argc, char *argv[])
                         struct timeval diff_time = diffTime(end_time, start_time);
                         double seconds = diff_time.tv_sec + ((double)diff_time.tv_usec) / 1000000;
                         printf("Trasmission time is %.2f seconds\n", seconds);
+                        
+                        free(received_packet);
+                        for (int i = 0; i < WINDOW_SIZE; i++) {
+                            if (created_packets[i] != NULL) {
+                                free(created_packets[i]);
+                            }
+                        }
+
+                        for (int i = 0; i < num_machines; i++) {
+                            for (int j=0; j < WINDOW_SIZE; j++) {
+                                if(table[i][j] != NULL) {
+                                    printf("Warning: table is not freed!\n");
+                                }
+                            }
+                        }
+
 
                         exit(0);
                     }
+                free(received_packet);
                 }
                 }
             }
