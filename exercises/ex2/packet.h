@@ -1,7 +1,7 @@
 #ifndef PACKET_H
 #define PACKET_H
 
-#define WINDOW_SIZE 1000
+#define WINDOW_SIZE 5000
 
 #define TAG_START 0
 #define TAG_DATA 1
@@ -14,7 +14,7 @@
 /**
  * Tuning hyperparameters
  */
-#define NUM_TO_SEND WINDOW_SIZE / 10
+#define NUM_TO_SEND WINDOW_SIZE / 2
 #define DELIVERY_GAP WINDOW_SIZE / 10
 #define TIMEOUT_SEC 0
 #define TIMEOUT_USEC 2000

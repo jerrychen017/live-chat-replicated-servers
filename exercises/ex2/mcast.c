@@ -387,13 +387,17 @@ int main(int argc, char *argv[])
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
 
-                        free(received_packet);
+                        // free(received_packet);
                     }
 
                     if (check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
                     {
                         free(received_packet);
                         continue;
+                    }
+
+                    if (received_packet->tag == TAG_ACK) {
+                        free(received_packet);
                     }
 
                     // try to deliver packets
