@@ -30,6 +30,7 @@ struct packet {
     if tag == TAG_ACK, first <num_machine> integers represent corresponding ack value
     if tag == TAG_NACK, first <num_machine> integers represent corresponding nack packet_index. 
     if the value is -1, then there's no nack for that machine.
+    if tag == TAG_COUNTER, first <num_machine> integers represent last counters for each machine.
     */
     int payload[1400 / sizeof(int)];
 };
