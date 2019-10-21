@@ -178,21 +178,16 @@ int main(int argc, char *argv[])
     while (num_created < num_packets && num_created < WINDOW_SIZE)
     {
         // create new packet
-        data_packet = malloc(sizeof(struct packet)+1400);
+        data_packet = malloc(sizeof(struct packet));
         data_packet->tag = TAG_DATA;
         counter++;
         data_packet->counter = counter;
-
         data_packet->machine_index = machine_index;
-
         data_packet->packet_index = num_created + 1;
-        num_created++;
         data_packet->random_data = (rand() % 999999) + 1;
-        // data_packet->payload = (int *)malloc(1400);
-
         created_packets[num_created] = data_packet;
+        num_created++;
     }
-
     for (int i = 0; i < NUM_TO_SEND; i++)
     {
         sendto(ss, created_packets[i], sizeof(struct packet), 0,
@@ -204,13 +199,11 @@ int main(int argc, char *argv[])
     end_packet.machine_index = machine_index;
     // put last packet_index
     end_packet.packet_index = num_packets;
-
     if (num_created == num_packets)
     {
         sendto(ss, &end_packet, sizeof(struct packet), 0,
                (struct sockaddr *)&send_addr, sizeof(send_addr));
     }
-
     struct packet nack_packet;
     nack_packet.tag = TAG_NACK;
     nack_packet.machine_index = machine_index;
@@ -297,11 +290,9 @@ int main(int argc, char *argv[])
                         // insert packet to table
                         int insert_index = convert(received_packet->packet_index, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1]);
                         // checks if the target spot is empty
-                        // if (table[received_packet.machine_index - 1][insert_index].tag == TAG_EMPTY)
                         if (table[received_packet->machine_index - 1][insert_index] == NULL)
                         {
                             table[received_packet->machine_index - 1][insert_index] = received_packet;
-                            // memcpy(&table[received_packet.machine_index - 1][insert_index], &received_packet, sizeof(struct packet));
                         }
 
                         // adopt the larger counter
@@ -334,19 +325,16 @@ int main(int argc, char *argv[])
                         {
 
                             // create new packet
-                            data_packet = malloc(sizeof(struct packet)+1400);
-                            // created_packets[start_array_indices[machine_index - 1]].tag = TAG_DATA;
+                            data_packet = malloc(sizeof(struct packet));
                             data_packet->tag = TAG_DATA;
                             counter++;
-                            // created_packets[start_array_indices[machine_index - 1]].counter = counter;
                             data_packet->counter = counter;
-                            // created_packets[start_array_indices[machine_index - 1]].machine_index = machine_index;
                             data_packet->machine_index = machine_index;
-                            // created_packets[start_array_indices[machine_index - 1]].packet_index = num_created + 1;
                             data_packet->packet_index = num_created + 1;
-                            num_created++;
+                            
                             // created_packets[start_array_indices[machine_index - 1]].random_data = (rand() % 999999) + 1;
                             data_packet->random_data = (rand() % 999999) + 1;
+                            num_created++;
                             // data_packet->payload = (int *)malloc(1400);
                             if (created_packets[start_array_indices[machine_index - 1]] != NULL)
                             {
@@ -421,7 +409,6 @@ int main(int argc, char *argv[])
                             }
                             if (i != machine_index - 1)
                             { // other machine case
-                                // if (table[i][start_array_indices[i]].tag != TAG_EMPTY)
                                 if (table[i][start_array_indices[i]] != NULL)
                                 { // next packet is in the table
                                     // deliverable if next packet has a counter that should be delivered next
@@ -491,20 +478,14 @@ int main(int argc, char *argv[])
                                     while (min >= start_packet_indices[i] && num_created < num_packets)
                                     {
                                         // create new packet
-                                        data_packet = malloc(sizeof(struct packet)+1400);
-                                        // created_packets[start_array_indices[machine_index - 1]].tag = TAG_DATA;
+                                        data_packet = malloc(sizeof(struct packet));
                                         data_packet->tag = TAG_DATA;
                                         counter++;
-                                        // created_packets[start_array_indices[machine_index - 1]].counter = counter;
                                         data_packet->counter = counter;
-                                        // created_packets[start_array_indices[machine_index - 1]].machine_index = machine_index;
                                         data_packet->machine_index = machine_index;
-                                        // created_packets[start_array_indices[machine_index - 1]].packet_index = num_created + 1;
                                         data_packet->packet_index = num_created + 1;
                                         num_created++;
-                                        // created_packets[start_array_indices[machine_index - 1]].random_data = (rand() % 999999) + 1;
                                         data_packet->random_data = (rand() % 999999) + 1;
-                                        // data_packet->payload = (int *)malloc(1400);
                                         
                                         if (created_packets[start_array_indices[machine_index - 1]] != NULL)
                                         {
@@ -540,7 +521,6 @@ int main(int argc, char *argv[])
                                     fprintf(fd, "%2d, %8d, %8d\n", i + 1, start_packet_indices[i], table[i][start_array_indices[i]]->random_data);
 
                                     // discard delivered packet in table
-                                    // table[i][start_array_indices[i]].tag = TAG_EMPTY;
                                     free(table[i][start_array_indices[i]]);
                                     table[i][start_array_indices[i]] = NULL;
 
@@ -661,7 +641,6 @@ int main(int argc, char *argv[])
                             else
                             { // other machine case
                                 int index = convert(requested_packet_index, start_packet_indices[i], start_array_indices[i]);
-                                // if (table[i][index].tag != TAG_EMPTY)
                                 if (table[i][index] != NULL)
                                 {
                                     sendto(ss, table[i][index], sizeof(struct packet), 0,
