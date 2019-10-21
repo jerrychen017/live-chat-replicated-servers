@@ -386,6 +386,8 @@ int main(int argc, char *argv[])
                             sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
+
+                        free(received_packet);
                     }
 
                     if (check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
@@ -604,7 +606,6 @@ int main(int argc, char *argv[])
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
                     } // end of while loop
-                    free(received_packet);
                     break;
                 }
 
