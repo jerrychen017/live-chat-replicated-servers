@@ -1,23 +1,21 @@
 #ifndef PACKET_H
 #define PACKET_H
 
-#define WINDOW_SIZE 5000
-
 #define TAG_START 0
 #define TAG_DATA 1
 #define TAG_ACK 2
 #define TAG_NACK 3
 #define TAG_END 4
-#define TAG_EMPTY 5
-#define TAG_COUNTER 6 // message that contains the last counter this machine delivered 
+#define TAG_COUNTER 5 // message that contains the last counter this machine delivered 
 
 /**
  * Tuning hyperparameters
  */
-#define NUM_TO_SEND WINDOW_SIZE / 2
+#define WINDOW_SIZE 200
+#define NUM_TO_SEND WINDOW_SIZE / 10
 #define DELIVERY_GAP WINDOW_SIZE / 10
 #define TIMEOUT_SEC 0
-#define TIMEOUT_USEC 2000
+#define TIMEOUT_USEC 1500
 #define NUM_EXIT_SIGNALS 5
 
 struct packet {
@@ -33,7 +31,6 @@ struct packet {
     if tag == TAG_COUNTER, first <num_machine> integers represent last counters for each machine.
     */
     int payload[1400 / sizeof(int)];
-    // int * payload;
 };
 
 #endif

@@ -123,7 +123,6 @@ int main(int argc, char *argv[])
     {
         for (int j = 0; j < WINDOW_SIZE; j++)
         {
-            // table[i][j].tag = TAG_EMPTY;
             table[i][j] = NULL; // initialize table entries to NULL
         }
     }
@@ -238,7 +237,6 @@ int main(int argc, char *argv[])
         {
             if (FD_ISSET(sr, &temp_mask))
             {
-                // bytes_received = recv_dbg(sr, (char *)&received_packet, sizeof(struct packet), 0);
                 received_packet = malloc(sizeof(struct packet));
                 bytes_received = recv_dbg(sr, (char *)received_packet, sizeof(struct packet), 0);
 
@@ -341,10 +339,8 @@ int main(int argc, char *argv[])
                             data_packet->machine_index = machine_index;
                             data_packet->packet_index = num_created + 1;
                             
-                            // created_packets[start_array_indices[machine_index - 1]].random_data = (rand() % 999999) + 1;
                             data_packet->random_data = (rand() % 999999) + 1;
                             num_created++;
-                            // data_packet->payload = (int *)malloc(1400);
                             if (created_packets[start_array_indices[machine_index - 1]] != NULL)
                             {
                                 free(created_packets[start_array_indices[machine_index - 1]]);
@@ -734,10 +730,6 @@ int main(int argc, char *argv[])
                     for (int i = 0; i < num_machines; i++)
                     {
                         all_received = all_received && last_counters[i] == last_delivered_counter;
-                        if (received_packet->payload[i] != last_delivered_counter && received_packet->payload[i] != -1)
-                        {
-                            printf("Warning: last packet counter sent from machine %d does not match.\n", received_packet->machine_index);
-                        }
                     }
 
                     if (all_received)
@@ -766,13 +758,13 @@ int main(int argc, char *argv[])
                             }
                         }
 
-                        for (int i = 0; i < num_machines; i++) {
+                        /*for (int i = 0; i < num_machines; i++) {
                             for (int j=0; j < WINDOW_SIZE; j++) {
                                 if(table[i][j] != NULL) {
                                     printf("Warning: table is not freed!\n");
                                 }
                             }
-                        }
+                        }*/
 
 
                         exit(0);
@@ -788,7 +780,6 @@ int main(int argc, char *argv[])
             // send ack
             //printf("TIMEOUT!\n");
 
-            //  && check_acks(acks, num_machines, num_packets))
             if (!ready_to_end)
             {
                 if (!check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))

@@ -11,21 +11,14 @@ struct timeval diffTime(struct timeval left, struct timeval right);
  */
 unsigned int convert(unsigned int sequence, unsigned int start_sequence, unsigned int start_index);
 
-// Print packet information for debugging
-void print_packet(struct packet *to_print, int num_machines);
-
-void print_status(struct packet *created_packets, int *acks, int *start_array_indices, 
-    int *start_packet_indices, int *end_indices, bool* finished, int *last_counters,
-    int counter, int last_delivered_counter, int num_created, int machine_index, int num_machines);
-
-// checks if my machine has finished delivering packets of all machines
+/* Checks if my machine has finished delivering packets of all machines
+ * if finished, update last_counter of this machine
+ */
 bool check_finished_delivery(bool *finished, int * last_counters, int num_machines, int machine_index, int counter);
 
+/* Checks if all other machines have finished delivering all my packets
+ */
 bool check_acks(int * acks, int num_machines, int num_packets);
-
-/*
-* Slide windows
-*/
 
 
 #endif
