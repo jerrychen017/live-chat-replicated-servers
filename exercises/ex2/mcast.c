@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
     }
 
     struct ip_mreq mreq;
-    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 100; /* (225.1.1.100) */
+    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 30; /* (225.1.1.30) */
     mreq.imr_multiaddr.s_addr = htonl(mcast_addr);
     mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
@@ -505,7 +505,6 @@ int main(int argc, char *argv[])
                             sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
-                        free(received_packet);
                     }
 
                     // do not enter deliver loop if finish delivery
@@ -513,6 +512,10 @@ int main(int argc, char *argv[])
                     {
                         free(received_packet);
                         continue;
+                    }
+
+                    if (received_packet->tag == TAG_ACK) {
+                        free(received_packet);
                     }
 
                     /* DELIVER */
