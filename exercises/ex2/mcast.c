@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
     int buffer_size = TABLE_SIZE / num_machines;
 
     struct packet *created_packets[CREATED_PACKETS_SIZE];
-    for (int i = 0; i < buffer_size; i++)
+    for (int i = 0; i < CREATED_PACKETS_SIZE; i++)
     {
         created_packets[i] = NULL;
     }
@@ -158,8 +158,8 @@ int main(int argc, char *argv[])
         highest_received[i] = 0;
     }
 
-    struct timeval timestamps[buffer_size];
-    for (int i = 0; i < buffer_size; i++)
+    struct timeval timestamps[CREATED_PACKETS_SIZE];
+    for (int i = 0; i < CREATED_PACKETS_SIZE; i++)
     {
         timerclear(&timestamps[i]);
     }
@@ -209,7 +209,6 @@ int main(int argc, char *argv[])
     }
     for (int i = 0; i < num_to_send ;i++)
     {
-        printf("send %d\n", i);
         sendto(ss, created_packets[i], sizeof(struct packet), 0,
                (struct sockaddr *)&send_addr, sizeof(send_addr));
         // record current timestamp
@@ -772,7 +771,7 @@ int main(int argc, char *argv[])
                         printf("Trasmission time is %.2f seconds\n", seconds);
 
                         free(received_packet);
-                        for (int i = 0; i < buffer_size; i++)
+                        for (int i = 0; i < CREATED_PACKETS_SIZE; i++)
                         {
                             if (created_packets[i] != NULL)
                             {
@@ -780,13 +779,13 @@ int main(int argc, char *argv[])
                             }
                         }
 
-                        /*for (int i = 0; i < num_machines; i++) {
+                        for (int i = 0; i < num_machines; i++) {
                             for (int j=0; j < buffer_size; j++) {
                                 if(table[i][j] != NULL) {
                                     printf("Warning: table is not freed!\n");
                                 }
                             }
-                        }*/
+                        }
 
                         exit(0);
                     }
