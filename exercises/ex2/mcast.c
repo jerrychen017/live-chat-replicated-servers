@@ -282,6 +282,7 @@ int main(int argc, char *argv[])
 
                 print_status(acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
                 print_packet(received_packet, num_machines);
+                //printf("ACK is %d\n", acks[machine_index - 1]);
 
                 switch (received_packet->tag)
                 {
@@ -320,7 +321,7 @@ int main(int argc, char *argv[])
                             }
                             sendto(ss, &ack_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
-                            
+
                             free(received_packet);
                             continue;
                         }
@@ -355,10 +356,28 @@ int main(int argc, char *argv[])
                                         nack_packet.payload[i] = -1;
                                     }
                                     nack_packet.payload[received_packet->machine_index - 1] = i;
+                                    printf("Send NACK for packet index %d because receive out of order\n", i);
                                     sendto(ss, &nack_packet, sizeof(struct packet), 0,
                                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                                 }
-                                highest_received[received_packet->machine_index - 1] = received_packet->packet_index;
+                            }
+
+                            // update highest_received
+                            bool has_empty_cell = false;
+                            for (int i = start_packet_indices[received_packet->machine_index - 1];
+                                 i < start_packet_indices[received_packet->machine_index - 1] + buffer_size;
+                                 i++)
+                            {
+                                int index = convert(i, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
+                                if (table[received_packet->machine_index - 1][index] == NULL)
+                                {
+                                    has_empty_cell = true;
+                                    highest_received[received_packet->machine_index - 1] = i - 1;
+                                }
+                            }
+                            if (!has_empty_cell)
+                            {
+                                highest_received[received_packet->machine_index - 1] = start_packet_indices[received_packet->machine_index - 1] + buffer_size - 1;
                             }
                         }
                         else
@@ -490,11 +509,16 @@ int main(int argc, char *argv[])
                                 { // next packet is in the table
                                     // deliverable if next packet has a counter that should be delivered next
                                     deliverable[i] = (table[i][start_array_indices[i]]->counter == last_delivered_counter + 1);
+                                    if (deliverable[i] == false)
+                                    {
+                                        printf("try to deliver machine %d fail: counter is %d, last_delivered_counter is %d\n", i + 1, table[i][start_array_indices[i]]->counter, last_delivered_counter);
+                                    }
                                     nack_packet.payload[i] = -1; // packet exits, don't nack
                                 }
                                 else
                                 { // packet hasn't arrived yet
                                     deliverable[i] = false;
+                                    printf("try to deliver machine %d fail: packet index %d does not exist\n", i + 1, start_packet_indices[i]);
                                     nack_packet.payload[i] = start_packet_indices[i]; // missing packet, nack
                                     is_full = false;
                                 }
@@ -670,6 +694,7 @@ int main(int argc, char *argv[])
                         }
                         else
                         { // not full, we have missing packets, send nack
+                            printf("Send NACK because cannot deliver\n");
                             sendto(ss, &nack_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }

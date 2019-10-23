@@ -150,7 +150,7 @@ void print_packet(struct packet *to_print, int num_machines) {
 
         case TAG_NACK:
         {
-            printf("Receive NACK packet\n");
+            printf("Receive NACK packet from machine %d\n", to_print->machine_index);
             for (int i = 0; i < num_machines; i++) {
                 if (to_print->payload[i] == -1) {
                     printf("machine %d nack: none\n", i + 1);
