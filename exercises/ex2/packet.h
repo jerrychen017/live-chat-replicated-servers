@@ -19,7 +19,8 @@
 #define RETRANSMIT_INTERVAL_SEC 0 
 #define RETRANSMIT_INTERVAL_USEC 3000
 #define NUM_EXIT_SIGNALS 5
-#define PACKET_BUFFER_SIZE 20
+#define CREATED_PACKETS_SIZE 20
+#define ACK_GAP 5
 
 struct packet {
     unsigned int tag;

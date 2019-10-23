@@ -43,7 +43,7 @@ bool check_finished_delivery(bool *finished, int * last_counters, int num_machin
 }
 
 bool check_acks(int * acks, int num_machines, int num_packets) { 
-    // min(ack) == num_packets (all other machines delivered my packets)
+    // min(ack) == num_packets (all other machines received my packets)
     int min_ack = acks[0]; 
     for (int i = 0; i < num_machines; i++) { 
         if (acks[i] < min_ack) {
