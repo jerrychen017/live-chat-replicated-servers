@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
     }
 
     struct ip_mreq mreq;
-    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 100; /* (225.1.1.100) */
+    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 30; /* (225.1.1.30) */
     mreq.imr_multiaddr.s_addr = htonl(mcast_addr);
     /* the interface could be changed to a specific interface if needed */
     mreq.imr_interface.s_addr = htonl(INADDR_ANY);
@@ -222,7 +222,8 @@ int main(int argc, char *argv[])
         sendto(ss, &end_packet, sizeof(struct packet), 0,
                (struct sockaddr *)&send_addr, sizeof(send_addr));
     }
-    if (num_packets == 0) {
+    if (num_packets == 0)
+    {
         finished[machine_index - 1] = true;
     }
     struct packet nack_packet;
@@ -280,6 +281,7 @@ int main(int argc, char *argv[])
                 }
 
                 print_status(acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
+                print_packet(received_packet, num_machines);
 
                 switch (received_packet->tag)
                 {
@@ -301,7 +303,24 @@ int main(int argc, char *argv[])
                         // continue if my machine has finished delivery
                         if (ready_to_end || check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
                         {
-                            // TODO: send ack/ end /
+                            // send ack
+                            struct packet ack_packet;
+                            ack_packet.tag = TAG_ACK;
+                            ack_packet.machine_index = machine_index;
+                            for (int i = 0; i < num_machines; i++)
+                            {
+                                if (i + 1 == machine_index)
+                                {
+                                    ack_packet.payload[i] = acks[i];
+                                }
+                                else
+                                {
+                                    ack_packet.payload[i] = start_packet_indices[i] - 1;
+                                }
+                            }
+                            sendto(ss, &ack_packet, sizeof(struct packet), 0,
+                                   (struct sockaddr *)&send_addr, sizeof(send_addr));
+                            
                             free(received_packet);
                             continue;
                         }
@@ -666,30 +685,31 @@ int main(int argc, char *argv[])
                     int requested_packet_index = received_packet->payload[i];
                     if (requested_packet_index != -1)
                     {
-                        // if received packet index not in range
-                        if (!(requested_packet_index >= start_packet_indices[i] && requested_packet_index < start_packet_indices[i] + buffer_size))
-                        {
-                            continue;
-                        }
-
                         // if received packet index is larger than num_packets, send END packet
                         if (requested_packet_index > num_packets)
                         {
                             sendto(ss, &end_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
+
+                        // if received packet index not in range
+                        if (!(requested_packet_index >= start_packet_indices[i] && requested_packet_index < start_packet_indices[i] + buffer_size))
+                        {
+                            continue;
+                        }
+
                         else
                         {
                             int index = convert(requested_packet_index, start_packet_indices[machine_index - 1], start_array_indices[machine_index - 1], buffer_size);
-                            
+
                             struct timeval now;
                             struct timeval interval;
                             gettimeofday(&now, NULL);
                             timersub(&now, &timestamps[index], &interval);
-                            if (!timerisset(&timestamps[index]) || !timercmp(&interval, &retransmit_interval, <)) {
-                                printf("interval is %ld sec %ld usec\n", interval.tv_sec, interval.tv_usec);
+                            if (!timerisset(&timestamps[index]) || !timercmp(&interval, &retransmit_interval, <))
+                            {
                                 sendto(ss, created_packets[index], sizeof(struct packet), 0,
-                                   (struct sockaddr *)&send_addr, sizeof(send_addr));
+                                       (struct sockaddr *)&send_addr, sizeof(send_addr));
                                 gettimeofday(&timestamps[index], NULL);
                             }
                         }
@@ -830,7 +850,6 @@ int main(int argc, char *argv[])
                     sendto(ss, &ack_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
 
-                    printf("Send NACK packet\n");
                     sendto(ss, &nack_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                 }
