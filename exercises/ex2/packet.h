@@ -11,11 +11,13 @@
 /**
  * Tuning hyperparameters
  */
-#define WINDOW_SIZE 200
-#define NUM_TO_SEND WINDOW_SIZE / 10
-#define DELIVERY_GAP WINDOW_SIZE / 10
+#define TABLE_SIZE 400
+#define FRACTION_TO_SEND 10
+#define FRACTION_DELIVERY_GAP 5
 #define TIMEOUT_SEC 0
-#define TIMEOUT_USEC 1500
+#define TIMEOUT_USEC 100000
+#define RETRANSMIT_INTERVAL_SEC 0 
+#define RETRANSMIT_INTERVAL_USEC 100000
 #define NUM_EXIT_SIGNALS 5
 
 struct packet {
