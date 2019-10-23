@@ -11,16 +11,15 @@
 /**
  * Tuning hyperparameters
  */
-#define TABLE_SIZE 400
+#define TABLE_SIZE 300
 #define FRACTION_TO_SEND 10
-#define FRACTION_DELIVERY_GAP 10
 #define TIMEOUT_SEC 0
-#define TIMEOUT_USEC 10000
+#define TIMEOUT_USEC 3000
 #define RETRANSMIT_INTERVAL_SEC 0
-#define RETRANSMIT_INTERVAL_USEC 10000
+#define RETRANSMIT_INTERVAL_USEC 3000
 #define NUM_EXIT_SIGNALS 5
 #define CREATED_PACKETS_SIZE 50
-#define ACK_GAP 5
+#define ACK_GAP 100
 
 struct packet {
     unsigned int tag;

@@ -204,10 +204,11 @@ int main(int argc, char *argv[])
 
     // send part of packet buffer
     int num_to_send = CREATED_PACKETS_SIZE / FRACTION_TO_SEND;
-    if (num_to_send > num_packets) {
+    if (num_to_send > num_packets)
+    {
         num_to_send = num_packets;
     }
-    for (int i = 0; i < num_to_send ;i++)
+    for (int i = 0; i < num_to_send; i++)
     {
         sendto(ss, created_packets[i], sizeof(struct packet), 0,
                (struct sockaddr *)&send_addr, sizeof(send_addr));
@@ -265,7 +266,6 @@ int main(int argc, char *argv[])
         timeout.tv_sec = TIMEOUT_SEC;
         timeout.tv_usec = TIMEOUT_USEC;
         num = select(FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
-        printf("%d\n", num);
         if (num > 0)
         {
             if (FD_ISSET(sr, &temp_mask))
@@ -284,10 +284,14 @@ int main(int argc, char *argv[])
                     printf("Warning: number of bytes in the received pakcet does not equal to size of packet\n");
                 }
 
-                print_status(acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines, start_array_index, start_packet_index);
-                print_packet(received_packet, num_machines);
+                //print_status(acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines, start_array_index, start_packet_index);
+                //print_packet(received_packet, num_machines);
                 //printf("ACK is %d\n", acks[machine_index - 1]);
-
+                //printf("acks[0] %d\n", acks[0]);
+                /*for (int i = 0; i < num_machines; i++) {
+                    printf("acks[%d] %d, ", i + 1, acks[0]);
+                }
+                printf("\n");*/
                 switch (received_packet->tag)
                 {
 
@@ -389,7 +393,6 @@ int main(int argc, char *argv[])
                                         nack_packet.payload[i] = -1;
                                     }
                                     nack_packet.payload[received_packet->machine_index - 1] = i;
-                                    printf("Send NACK for packet index %d because receive out of order\n", i);
                                     sendto(ss, &nack_packet, sizeof(struct packet), 0,
                                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                                 }
@@ -514,7 +517,8 @@ int main(int argc, char *argv[])
                         continue;
                     }
 
-                    if (received_packet->tag == TAG_ACK) {
+                    if (received_packet->tag == TAG_ACK)
+                    {
                         free(received_packet);
                     }
 
@@ -546,16 +550,11 @@ int main(int argc, char *argv[])
                             { // next packet is in the table
                                 // deliverable if next packet has a counter that should be delivered next
                                 deliverable[i] = (table[i][start_array_indices[i]]->counter == last_delivered_counter + 1);
-                                if (deliverable[i] == false)
-                                {
-                                    printf("try to deliver machine %d fail: counter is %d, last_delivered_counter is %d\n", i + 1, table[i][start_array_indices[i]]->counter, last_delivered_counter);
-                                }
                                 nack_packet.payload[i] = -1; // packet exits, don't nack
                             }
                             else
                             {
                                 deliverable[i] = false;
-                                printf("try to deliver machine %d fail: packet index %d does not exist\n", i + 1, start_packet_indices[i]);
                                 nack_packet.payload[i] = start_packet_indices[i]; // missing packet, nack
                                 is_full = false;
                             }
@@ -635,7 +634,6 @@ int main(int argc, char *argv[])
                         /* STOP DELIVERY */
                         else
                         { // not full, we have missing packets, send nack
-                            printf("Send NACK because cannot deliver\n");
                             sendto(ss, &nack_packet, sizeof(struct packet), 0,
                                    (struct sockaddr *)&send_addr, sizeof(send_addr));
                         }
@@ -783,14 +781,6 @@ int main(int argc, char *argv[])
                             }
                         }
 
-                        for (int i = 0; i < num_machines; i++) {
-                            for (int j=0; j < buffer_size; j++) {
-                                if(table[i][j] != NULL) {
-                                    printf("Warning: table is not freed!\n");
-                                }
-                            }
-                        }
-
                         exit(0);
                     }
                     free(received_packet);
@@ -823,6 +813,15 @@ int main(int argc, char *argv[])
                 }
                 else
                 { // finished delivery
+                    /*struct packet ack_packet;
+                    ack_packet.tag = TAG_ACK;
+                    ack_packet.machine_index = machine_index;
+                    for (int i = 0; i < num_machines; i++)
+                    {
+                        ack_packet.payload[i] = highest_received[i];
+                    }
+                    sendto(ss, &ack_packet, sizeof(struct packet), 0,
+                           (struct sockaddr *)&send_addr, sizeof(send_addr));*/
                     sendto(ss, &end_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                 }
@@ -846,6 +845,19 @@ int main(int argc, char *argv[])
                 }
                 sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
                        (struct sockaddr *)&send_addr, sizeof(send_addr));
+
+                /*struct packet ack_packet;
+                ack_packet.tag = TAG_ACK;
+                ack_packet.machine_index = machine_index;
+                for (int i = 0; i < num_machines; i++)
+                {
+                    ack_packet.payload[i] = highest_received[i];
+                }
+                sendto(ss, &ack_packet, sizeof(struct packet), 0,
+                       (struct sockaddr *)&send_addr, sizeof(send_addr));
+
+                sendto(ss, &end_packet, sizeof(struct packet), 0,
+                       (struct sockaddr *)&send_addr, sizeof(send_addr));*/
             }
         }
     }
