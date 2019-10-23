@@ -19,7 +19,7 @@
 #define RETRANSMIT_INTERVAL_USEC 3000
 #define NUM_EXIT_SIGNALS 5
 #define CREATED_PACKETS_SIZE 50
-#define ACK_GAP 100
+#define ACK_GAP 25
 
 struct packet {
     unsigned int tag;
