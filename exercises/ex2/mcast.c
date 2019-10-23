@@ -7,8 +7,6 @@
 
 int main(int argc, char *argv[])
 {
-    // TODO: who responds to nack? (implement explicit flow control) unicast
-    // makes sure after start packet, we can send IP address to all other machines
     // TODO: last big timeout
 
     // args error checking
@@ -60,9 +58,8 @@ int main(int argc, char *argv[])
     }
 
     struct ip_mreq mreq;
-    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 100; /* (225.1.1.100) */
+    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 30; /* (225.1.1.30) */
     mreq.imr_multiaddr.s_addr = htonl(mcast_addr);
-    /* the interface could be changed to a specific interface if needed */
     mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
     // sr joins multicast group
@@ -104,9 +101,10 @@ int main(int argc, char *argv[])
     int bytes_received;
     struct packet *received_packet = malloc(sizeof(struct packet));
 
-    // internal data structures
+    /* DATA STRUCTURES */
     int buffer_size = TABLE_SIZE / num_machines;
-    struct packet *created_packets[buffer_size];
+
+    struct packet *created_packets[PACKET_BUFFER_SIZE];
     for (int i = 0; i < buffer_size; i++)
     {
         created_packets[i] = NULL;
@@ -117,7 +115,6 @@ int main(int argc, char *argv[])
 
     // a table that contains packet pointers
     struct packet *table[num_machines][buffer_size];
-    // initialize table entries to packets with empty tag
     for (int i = 0; i < num_machines; i++)
     {
         for (int j = 0; j < buffer_size; j++)
@@ -134,7 +131,6 @@ int main(int argc, char *argv[])
 
     // corresponding packet index for each start array index
     int start_packet_indices[num_machines];
-    // initializing start_packet_indices
     for (int i = 0; i < num_machines; i++)
     {
         start_packet_indices[i] = 1;
@@ -166,7 +162,7 @@ int main(int argc, char *argv[])
         timerclear(&timestamps[i]);
     }
 
-    // interval in between sending NACK
+    // interval in between sending retransmission
     struct timeval retransmit_interval;
     retransmit_interval.tv_sec = RETRANSMIT_INTERVAL_SEC;
     retransmit_interval.tv_usec = RETRANSMIT_INTERVAL_USEC;
@@ -174,7 +170,8 @@ int main(int argc, char *argv[])
     int counter = 0;
     int last_delivered_counter = 0;
 
-    // Receive START packet
+
+    /* RECEIVE START PACKET */
     bytes_received = recv(sr, received_packet, sizeof(struct packet), 0);
     printf("Receive START pakcet\n");
     free(received_packet);
@@ -188,12 +185,11 @@ int main(int argc, char *argv[])
     struct timeval start_time;
     gettimeofday(&start_time, NULL);
 
-    // initialize created_packets
+    /* CREATE PACKETS */
     int num_created = 0;
     struct packet *data_packet = NULL;
-    while (num_created < num_packets && num_created < buffer_size)
+    while (num_created < num_packets && num_created < PACKET_BUFFER_SIZE)
     {
-        // create new packet
         data_packet = malloc(sizeof(struct packet));
         data_packet->tag = TAG_DATA;
         counter++;
@@ -204,7 +200,9 @@ int main(int argc, char *argv[])
         created_packets[num_created] = data_packet;
         num_created++;
     }
-    for (int i = 0; i < buffer_size / FRACTION_TO_SEND; i++)
+
+    // send part of packet buffer
+    for (int i = 0; i < PACKET_BUFFER_SIZE / FRACTION_TO_SEND; i++)
     {
         sendto(ss, created_packets[i], sizeof(struct packet), 0,
                (struct sockaddr *)&send_addr, sizeof(send_addr));

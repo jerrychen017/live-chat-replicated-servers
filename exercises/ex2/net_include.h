@@ -12,4 +12,4 @@
 
 #include <errno.h>
 
-#define PORT	     10100
+#define PORT	     10030
