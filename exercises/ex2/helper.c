@@ -55,20 +55,21 @@ bool check_acks(int * acks, int num_machines, int num_packets) {
 
 void print_status(int *acks, int *start_array_indices, 
     int *start_packet_indices, int *end_indices, bool* finished, int *last_counters,
-    int counter, int last_delivered_counter, int num_created, int machine_index, int num_machines) {
+    int counter, int last_delivered_counter, int num_created, int machine_index, int num_machines,
+    int start_array_index, int start_packet_index) {
 
     printf("-------------------------------STATUS report-------------------------------\n");
     // created packet
     printf("Counter: %d\n", counter);
     printf("----Created packets----\n");
     printf("Created %d packets\n", num_created);
-    printf("start packet index: %d\n", start_packet_indices[machine_index - 1]);
-    printf("start array index: %d\n", start_array_indices[machine_index - 1]);
+    printf("start packet index: %d\n", start_packet_index);
+    printf("start array index: %d\n", start_array_index);
     
     // acks
     printf("-------Ack-------\n");
     for (int i = 0; i < num_machines; i++) {
-        printf("machine %d has delivered my packets up to %d\n", i + 1, acks[i]);
+        printf("machine %d has received my packets up to %d\n", i + 1, acks[i]);
     }
 
     // table
@@ -142,7 +143,7 @@ void print_packet(struct packet *to_print, int num_machines) {
         {
             printf("Receive ACK packet from machine %d\n", to_print->machine_index);
             for (int i = 0; i < num_machines; i++) {
-                printf("machine %d has delivered machine %d packets up to: %d\n", to_print->machine_index, i + 1, to_print->payload[i]);
+                printf("machine %d has received machine %d packets up to: %d\n", to_print->machine_index, i + 1, to_print->payload[i]);
             }
             printf("%s\n", divider);
             break;

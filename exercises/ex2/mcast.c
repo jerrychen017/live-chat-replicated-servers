@@ -203,8 +203,13 @@ int main(int argc, char *argv[])
     }
 
     // send part of packet buffer
-    for (int i = 0; i < CREATED_PACKETS_SIZE / FRACTION_TO_SEND; i++)
+    int num_to_send = CREATED_PACKETS_SIZE / FRACTION_TO_SEND;
+    if (num_to_send > num_packets) {
+        num_to_send = num_packets;
+    }
+    for (int i = 0; i < num_to_send ;i++)
     {
+        printf("send %d\n", i);
         sendto(ss, created_packets[i], sizeof(struct packet), 0,
                (struct sockaddr *)&send_addr, sizeof(send_addr));
         // record current timestamp
@@ -261,6 +266,7 @@ int main(int argc, char *argv[])
         timeout.tv_sec = TIMEOUT_SEC;
         timeout.tv_usec = TIMEOUT_USEC;
         num = select(FD_SETSIZE, &temp_mask, NULL, NULL, &timeout);
+        printf("%d\n", num);
         if (num > 0)
         {
             if (FD_ISSET(sr, &temp_mask))
@@ -279,7 +285,7 @@ int main(int argc, char *argv[])
                     printf("Warning: number of bytes in the received pakcet does not equal to size of packet\n");
                 }
 
-                print_status(acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines);
+                print_status(acks, start_array_indices, start_packet_indices, end_indices, finished, last_counters, counter, last_delivered_counter, num_created, machine_index, num_machines, start_array_index, start_packet_index);
                 print_packet(received_packet, num_machines);
                 //printf("ACK is %d\n", acks[machine_index - 1]);
 
