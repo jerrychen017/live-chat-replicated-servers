@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
     }
 
     struct ip_mreq mreq;
-    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 30; /* (225.1.1.30) */
+    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 100; /* (225.1.1.100) */
     mreq.imr_multiaddr.s_addr = htonl(mcast_addr);
     mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
@@ -647,6 +647,7 @@ int main(int argc, char *argv[])
                     int requested_packet_index = received_packet->payload[i];
                     if (requested_packet_index == -1)
                     {
+                        free(received_packet);
                         break;
                     }
 
