@@ -112,3 +112,79 @@ void print_status(int *acks, int *start_array_indices,
     printf("------------------------------STATUS report END------------------------------\n\n");
 
 }
+
+void print_packet(struct packet *to_print, int num_machines) {
+    
+    printf("-----------------------------PACKET INFO--------------------------------\n");
+    char divider[] = "---------------------------PACKET INFO END--------------------------------\n";
+
+    switch(to_print->tag) {
+        case TAG_START:
+        {
+            printf(" ** ERROR ** ");
+            printf("Receive START packet\n");
+            printf("%s\n", divider);
+            break;
+        }
+
+        case TAG_DATA:
+        {
+            printf("Receive DATA packet\n");
+            printf("counter: %d\n", to_print->counter);
+            printf("from machine: %d\n", to_print->machine_index);
+            printf("packet index: %d\n", to_print->packet_index);
+            printf("random data: %d\n", to_print->random_data);
+            printf("%s\n", divider);
+            break;
+        }
+
+        case TAG_ACK:
+        {
+            printf("Receive ACK packet from machine %d\n", to_print->machine_index);
+            for (int i = 0; i < num_machines; i++) {
+                printf("machine %d has delivered machine %d packets up to: %d\n", to_print->machine_index, i + 1, to_print->payload[i]);
+            }
+            printf("%s\n", divider);
+            break;
+        }
+
+        case TAG_NACK:
+        {
+            printf("Receive NACK packet from machine %d\n", to_print->machine_index);
+            for (int i = 0; i < num_machines; i++) {
+                if (to_print->payload[i] == -1) {
+                    printf("machine %d nack: none\n", i + 1);
+                } else {
+                    printf("machine %d nack: %d\n", i + 1, to_print->payload[i]);
+                }
+            }
+            printf("%s\n", divider);
+            break;
+        }
+
+        case TAG_END:
+        {
+            printf("Receive END packet\n");
+            printf("from machine: %d\n", to_print->machine_index);
+            printf("last packet index: %d\n", to_print->packet_index);
+            printf("%s\n", divider);
+            break;
+        }
+
+        case TAG_COUNTER:
+        {
+            printf("Receive COUNTER packet\n");
+            printf("from machine: %d\n", to_print->machine_index);
+            for (int i = 0; i < num_machines; i++) {
+                if (to_print->payload[i] != -1) {
+                    printf("machine %d counter: %d\n", i + 1, to_print->payload[i]);
+                } else {
+                    printf("machine %d counter: unknown\n", i + 1);
+                }
+            }
+            printf("%s\n", divider);
+            break;
+        }
+
+    }
+}

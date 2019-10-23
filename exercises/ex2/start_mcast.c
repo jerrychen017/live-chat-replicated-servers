@@ -3,7 +3,11 @@
 
 int main() {
     
+<<<<<<< HEAD
     int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 30; /* (225.1.1.100) */
+=======
+    int mcast_addr = 225 << 24 | 1 << 16 | 1 << 8 | 30; /* (225.1.1.30) */
+>>>>>>> debug
 
     int ss = socket(AF_INET, SOCK_DGRAM, 0); /* Socket for sending */
     if (ss<0) {
