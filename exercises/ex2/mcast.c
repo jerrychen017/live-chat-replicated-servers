@@ -219,9 +219,11 @@ int main(int argc, char *argv[])
     end_packet.packet_index = num_packets;
     if (num_created == num_packets)
     {
-        finished[machine_index - 1] = true;
         sendto(ss, &end_packet, sizeof(struct packet), 0,
                (struct sockaddr *)&send_addr, sizeof(send_addr));
+    }
+    if (num_packets == 0) {
+        finished[machine_index - 1] = true;
     }
     struct packet nack_packet;
     nack_packet.tag = TAG_NACK;
@@ -458,11 +460,15 @@ int main(int argc, char *argv[])
                         // update deliverables and check if a row is full
                         for (int i = 0; i < num_machines; i++)
                         {
+                            if (i == machine_index - 1) {
+                                printf("my turn!\n");
+                            }
                             if (finished[i])
                             { // skips this machine if I have finished delivering all its packets
                                 nack_packet.payload[i] = -1;
                                 continue;
                             }
+                            printf("I am NOT finished\n");
                             if (i != machine_index - 1)
                             { // other machine case
                                 if (table[i][start_array_indices[i]] != NULL)
@@ -828,6 +834,7 @@ int main(int argc, char *argv[])
                     sendto(ss, &ack_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
 
+                    printf("Send NACK packet\n");
                     sendto(ss, &nack_packet, sizeof(struct packet), 0,
                            (struct sockaddr *)&send_addr, sizeof(send_addr));
                 }
