@@ -460,15 +460,11 @@ int main(int argc, char *argv[])
                         // update deliverables and check if a row is full
                         for (int i = 0; i < num_machines; i++)
                         {
-                            if (i == machine_index - 1) {
-                                printf("my turn!\n");
-                            }
                             if (finished[i])
                             { // skips this machine if I have finished delivering all its packets
                                 nack_packet.payload[i] = -1;
                                 continue;
                             }
-                            printf("I am NOT finished\n");
                             if (i != machine_index - 1)
                             { // other machine case
                                 if (table[i][start_array_indices[i]] != NULL)
