@@ -1,24 +1,25 @@
 #ifndef PACKET_H
 #define PACKET_H
 
-#define WINDOW_SIZE 1000
-
 #define TAG_START 0
 #define TAG_DATA 1
 #define TAG_ACK 2
 #define TAG_NACK 3
 #define TAG_END 4
-#define TAG_EMPTY 5
-#define TAG_COUNTER 6 // message that contains the last counter this machine delivered 
+#define TAG_COUNTER 5 // message that contains the last counter this machine delivered 
 
 /**
  * Tuning hyperparameters
  */
-#define NUM_TO_SEND WINDOW_SIZE / 10
-#define DELIVERY_GAP WINDOW_SIZE / 10
+#define TABLE_SIZE 400
+#define NUM_TO_SEND 10 
 #define TIMEOUT_SEC 0
 #define TIMEOUT_USEC 2000
-#define NUM_EXIT_SIGNALS 5
+#define RETRANSMIT_INTERVAL_SEC 0
+#define RETRANSMIT_INTERVAL_USEC 3000
+#define NUM_EXIT_SIGNALS 10 
+#define CREATED_PACKETS_SIZE 10 
+#define ACK_GAP 40 
 
 struct packet {
     unsigned int tag;
