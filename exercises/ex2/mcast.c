@@ -203,7 +203,8 @@ int main(int argc, char *argv[])
     }
 
     // send part of packet buffer
-    int num_to_send = CREATED_PACKETS_SIZE / FRACTION_TO_SEND;
+    // int num_to_send = CREATED_PACKETS_SIZE / FRACTION_TO_SEND;
+    int num_to_send = NUM_TO_SEND;
     if (num_to_send > num_packets)
     {
         num_to_send = num_packets;
@@ -304,105 +305,186 @@ int main(int argc, char *argv[])
 
                 case TAG_ACK:
                 {
-                }
-                case TAG_DATA:
-                {
-
-                    /* RECEIVE DATA PACKET */
-                    if (received_packet->tag == TAG_DATA)
+                    if (ready_to_end || check_acks(acks, num_machines, num_packets))
                     {
-                        num_received++;
-                        // continue if my machine has finished delivery
-                        if (ready_to_end || check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
-                        {
-                            // send ack
-                            struct packet ack_packet;
-                            ack_packet.tag = TAG_ACK;
-                            ack_packet.machine_index = machine_index;
-                            for (int i = 0; i < num_machines; i++)
-                            {
-                                ack_packet.payload[i] = highest_received[i];
-                            }
-                            sendto(ss, &ack_packet, sizeof(struct packet), 0,
-                                   (struct sockaddr *)&send_addr, sizeof(send_addr));
+                        free(received_packet);
+                        continue;
+                    }
 
-                            free(received_packet);
-                            continue;
+                    acks[received_packet->machine_index - 1] = received_packet->payload[machine_index - 1];
+
+                    // check if can slide the window and create new packets
+                    int min = acks[0];
+                    for (int j = 0; j < num_machines; j++)
+                    {
+                        if (acks[j] < min)
+                        {
+                            min = acks[j];
                         }
+                    }
 
-                        // if received packet index not in range
-                        if (!(received_packet->packet_index >= start_packet_indices[received_packet->machine_index - 1] && received_packet->packet_index < start_packet_indices[received_packet->machine_index - 1] + buffer_size))
+                    // slide window and create new packets
+                    while (min >= start_packet_index && num_created < num_packets)
+                    {
+                        data_packet = malloc(sizeof(struct packet));
+                        data_packet->tag = TAG_DATA;
+                        counter++;
+                        data_packet->counter = counter;
+                        data_packet->machine_index = machine_index;
+                        data_packet->packet_index = num_created + 1;
+
+                        data_packet->random_data = (rand() % 999999) + 1;
+                        num_created++;
+
+                        // discard packet
+                        if (created_packets[start_array_index] != NULL)
                         {
-                            // TODO: send ack/nack
-                            free(received_packet);
-                            continue;
-                        }
-
-                        int insert_index = convert(received_packet->packet_index, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
-
-                        /* INSERT PACKET TO TABLE */
-                        if (table[received_packet->machine_index - 1][insert_index] == NULL)
-                        {
-                            table[received_packet->machine_index - 1][insert_index] = received_packet;
-
-                            // update highest_received
-                            bool has_empty_cell = false;
-                            for (int i = start_packet_indices[received_packet->machine_index - 1];
-                                 i < start_packet_indices[received_packet->machine_index - 1] + buffer_size;
-                                 i++)
-                            {
-                                int index = convert(i, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
-                                if (table[received_packet->machine_index - 1][index] == NULL)
-                                {
-                                    has_empty_cell = true;
-                                    highest_received[received_packet->machine_index - 1] = i - 1;
-                                    break;
-                                }
-                            }
-                            if (!has_empty_cell)
-                            {
-                                highest_received[received_packet->machine_index - 1] = start_packet_indices[received_packet->machine_index - 1] + buffer_size - 1;
-                            }
-
-                            int upper = start_packet_indices[received_packet->machine_index - 1] + buffer_size - 1;
-                            for (int i = start_packet_indices[received_packet->machine_index - 1] + buffer_size - 1;
-                                 i >= highest_received[received_packet->machine_index - 1];
-                                 i--)
-                            {
-                                int index = convert(i, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
-                                if (table[received_packet->machine_index - 1][index] != NULL)
-                                {
-                                    upper = i;
-                                    break;
-                                }
-                            }
-
-                            // send NACK if received packet is not in order
-                            for (int i = highest_received[received_packet->machine_index - 1] + 1;
-                                 i < upper;
-                                 i++)
-                            {
-                                int index = convert(i, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
-                                if (table[received_packet->machine_index - 1][index] == NULL)
-                                {
-                                    struct packet nack_packet;
-                                    nack_packet.tag = TAG_NACK;
-                                    nack_packet.machine_index = machine_index;
-                                    for (int i = 0; i < num_machines; i++)
-                                    {
-                                        nack_packet.payload[i] = -1;
-                                    }
-                                    nack_packet.payload[received_packet->machine_index - 1] = i;
-                                    sendto(ss, &nack_packet, sizeof(struct packet), 0,
-                                           (struct sockaddr *)&send_addr, sizeof(send_addr));
-                                }
-                            }
+                            free(created_packets[start_array_index]);
                         }
                         else
                         {
-                            free(received_packet);
-                            continue;
+                            printf("Warning: created_packets slide position is null\n");
                         }
+
+                        created_packets[start_array_index] = data_packet;
+
+                        sendto(ss, created_packets[start_array_index], sizeof(struct packet), 0,
+                               (struct sockaddr *)&send_addr, sizeof(send_addr));
+
+                        if (num_created == num_packets)
+                        {
+                            sendto(ss, &end_packet, sizeof(struct packet), 0,
+                                   (struct sockaddr *)&send_addr, sizeof(send_addr));
+                        }
+
+                        // slide window
+                        start_array_index = (start_array_index + 1) % CREATED_PACKETS_SIZE;
+                        start_packet_index++;
+                    }
+
+                    // check if ready_to_end after updating ack
+                    if (!ready_to_end && check_finished_delivery(finished, last_counters, num_machines, machine_index, counter) && check_acks(acks, num_machines, num_packets))
+                    {
+                        fclose(fd);
+                        ready_to_end = true;
+
+                        printf("=========================\n");
+                        printf("       Ready to end\n");
+                        printf("=========================\n");
+
+                        struct packet last_counter_packet;
+                        last_counter_packet.tag = TAG_COUNTER;
+                        last_counter_packet.machine_index = machine_index;
+                        last_counters[machine_index - 1] = counter;
+                        for (int i = 0; i < num_machines; i++)
+                        {
+                            last_counter_packet.payload[i] = last_counters[i];
+                        }
+                        sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
+                               (struct sockaddr *)&send_addr, sizeof(send_addr));
+                    }
+                    free(received_packet);
+                    break;
+                }
+                case TAG_DATA:
+                {
+                    num_received++;
+                    // continue if my machine has finished delivery
+                    if (ready_to_end || check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
+                    {
+                        // send ack
+                        struct packet ack_packet;
+                        ack_packet.tag = TAG_ACK;
+                        ack_packet.machine_index = machine_index;
+                        for (int i = 0; i < num_machines; i++)
+                        {
+                            ack_packet.payload[i] = highest_received[i];
+                        }
+                        sendto(ss, &ack_packet, sizeof(struct packet), 0,
+                               (struct sockaddr *)&send_addr, sizeof(send_addr));
+
+                        free(received_packet);
+                        continue;
+                    }
+
+                    // if received packet index not in range
+                    if (!(received_packet->packet_index >= start_packet_indices[received_packet->machine_index - 1] && received_packet->packet_index < start_packet_indices[received_packet->machine_index - 1] + buffer_size))
+                    {
+                        // TODO: send ack/nack
+                        free(received_packet);
+                        continue;
+                    }
+
+                    int insert_index = convert(received_packet->packet_index, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
+
+                    /* INSERT PACKET TO TABLE */
+                    if (table[received_packet->machine_index - 1][insert_index] == NULL)
+                    {
+                        table[received_packet->machine_index - 1][insert_index] = received_packet;
+
+                        // update highest_received
+                        bool has_empty_cell = false;
+                        for (int i = start_packet_indices[received_packet->machine_index - 1];
+                             i < start_packet_indices[received_packet->machine_index - 1] + buffer_size;
+                             i++)
+                        {
+                            int index = convert(i, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
+                            if (table[received_packet->machine_index - 1][index] == NULL)
+                            {
+                                has_empty_cell = true;
+                                highest_received[received_packet->machine_index - 1] = i - 1;
+                                break;
+                            }
+                        }
+                        if (!has_empty_cell)
+                        {
+                            highest_received[received_packet->machine_index - 1] = start_packet_indices[received_packet->machine_index - 1] + buffer_size - 1;
+                        }
+
+                        int upper = start_packet_indices[received_packet->machine_index - 1] + buffer_size - 1;
+                        for (int i = start_packet_indices[received_packet->machine_index - 1] + buffer_size - 1;
+                             i >= highest_received[received_packet->machine_index - 1];
+                             i--)
+                        {
+                            int index = convert(i, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
+                            if (table[received_packet->machine_index - 1][index] != NULL)
+                            {
+                                upper = i;
+                                break;
+                            }
+                        }
+
+                        // send NACK if received packet is not in order
+                        for (int i = highest_received[received_packet->machine_index - 1] + 1;
+                             i < upper;
+                             i++)
+                        {
+                            int index = convert(i, start_packet_indices[received_packet->machine_index - 1], start_array_indices[received_packet->machine_index - 1], buffer_size);
+                            if (table[received_packet->machine_index - 1][index] == NULL)
+                            {
+                                struct packet nack_packet;
+                                nack_packet.tag = TAG_NACK;
+                                nack_packet.machine_index = machine_index;
+                                for (int i = 0; i < num_machines; i++)
+                                {
+                                    nack_packet.payload[i] = -1;
+                                }
+                                nack_packet.payload[received_packet->machine_index - 1] = i;
+                                sendto(ss, &nack_packet, sizeof(struct packet), 0,
+                                       (struct sockaddr *)&send_addr, sizeof(send_addr));
+                            }
+                        }
+
+                        // /* RECEIVE DATA PACKET */
+                        // if (received_packet->tag == TAG_DATA)
+                        // {
+
+                        //     }
+                        //     else
+                        //     {
+
+                        //         continue;
+                        //     }
 
                         if (num_received > ACK_GAP)
                         {
@@ -426,100 +508,11 @@ int main(int argc, char *argv[])
                         }
                     }
 
-                    /* RECEIVE ACK PACKET */
-                    else if (received_packet->tag == TAG_ACK)
-                    {
-
-                        if (ready_to_end || check_acks(acks, num_machines, num_packets))
-                        {
-                            free(received_packet);
-                            continue;
-                        }
-
-                        acks[received_packet->machine_index - 1] = received_packet->payload[machine_index - 1];
-
-                        // check if can slide the window and create new packets
-                        int min = acks[0];
-                        for (int j = 0; j < num_machines; j++)
-                        {
-                            if (acks[j] < min)
-                            {
-                                min = acks[j];
-                            }
-                        }
-
-                        // slide window and create new packets
-                        while (min >= start_packet_index && num_created < num_packets)
-                        {
-                            data_packet = malloc(sizeof(struct packet));
-                            data_packet->tag = TAG_DATA;
-                            counter++;
-                            data_packet->counter = counter;
-                            data_packet->machine_index = machine_index;
-                            data_packet->packet_index = num_created + 1;
-
-                            data_packet->random_data = (rand() % 999999) + 1;
-                            num_created++;
-
-                            // discard packet
-                            if (created_packets[start_array_index] != NULL)
-                            {
-                                free(created_packets[start_array_index]);
-                            }
-                            else
-                            {
-                                printf("Warning: created_packets slide position is null\n");
-                            }
-
-                            created_packets[start_array_index] = data_packet;
-
-                            sendto(ss, created_packets[start_array_index], sizeof(struct packet), 0,
-                                   (struct sockaddr *)&send_addr, sizeof(send_addr));
-
-                            if (num_created == num_packets)
-                            {
-                                sendto(ss, &end_packet, sizeof(struct packet), 0,
-                                       (struct sockaddr *)&send_addr, sizeof(send_addr));
-                            }
-
-                            // slide window
-                            start_array_index = (start_array_index + 1) % CREATED_PACKETS_SIZE;
-                            start_packet_index++;
-                        }
-
-                        // check if ready_to_end after updating ack
-                        if (!ready_to_end && check_finished_delivery(finished, last_counters, num_machines, machine_index, counter) && check_acks(acks, num_machines, num_packets))
-                        {
-                            fclose(fd);
-                            ready_to_end = true;
-
-                            printf("=========================\n");
-                            printf("       Ready to end\n");
-                            printf("=========================\n");
-
-                            struct packet last_counter_packet;
-                            last_counter_packet.tag = TAG_COUNTER;
-                            last_counter_packet.machine_index = machine_index;
-                            last_counters[machine_index - 1] = counter;
-                            for (int i = 0; i < num_machines; i++)
-                            {
-                                last_counter_packet.payload[i] = last_counters[i];
-                            }
-                            sendto(ss, &last_counter_packet, sizeof(struct packet), 0,
-                                   (struct sockaddr *)&send_addr, sizeof(send_addr));
-                        }
-                    }
-
                     // do not enter deliver loop if finish delivery
                     if (check_finished_delivery(finished, last_counters, num_machines, machine_index, counter))
                     {
                         free(received_packet);
                         continue;
-                    }
-
-                    if (received_packet->tag == TAG_ACK)
-                    {
-                        free(received_packet);
                     }
 
                     /* DELIVER */
