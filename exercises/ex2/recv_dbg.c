@@ -35,7 +35,7 @@ int recv_dbg(int s, char *buf, int len, int flags)
         decision = rand() % 100 + 1;
 	
         gettimeofday( &current_time, NULL );
-        if( current_time.tv_sec - init_time.tv_sec > 1000 ) 
+        if( current_time.tv_sec - init_time.tv_sec > 100 ) 
         {
             printf("recv_dbg: time is up - killing the process \n");
             exit( 1 );
