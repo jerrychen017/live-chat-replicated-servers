@@ -12,4 +12,12 @@ struct message {
     int payload[1300 / sizeof(int)];
 };
 
+/**
+ Tuning hyperparameters
+*/
+
+#define INIT_SEND_SIZE 10
+
+
+
 #endif 

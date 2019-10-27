@@ -9,14 +9,16 @@ static char User[80];
 static char Spread_name[80];
 
 static char Private_group[MAX_GROUP_NAME];
+static char groups[10][MAX_GROUP_NAME];
 static mailbox Mbox;
 static int Num_sent;
 static unsigned int Previous_len;
 static int To_exit = 0;
 
-static int num_messages; 
-static int num_processes; 
+static int num_messages;
+static int num_processes;
 static int process_index;
+static int num_sent = 0;
 
 #define MAX_MESSLEN 102400
 #define MAX_VSSETS 10
@@ -83,8 +85,10 @@ int main(int argc, char *argv[])
     E_attach_fd(Mbox, READ_FD, receive_messages, 0, NULL, HIGH_PRIORITY);
 
     char group[80] = "group";
+    sprintf(groups[0], "group");
     ret = SP_join(Mbox, group);
-    if (ret < 0) {
+    if (ret < 0)
+    {
         SP_error(ret);
     }
 
@@ -142,6 +146,7 @@ static void receive_messages()
         if (Is_agreed_mess(service_type))
         {
             printf("received AGREED ");
+            printf("mess process index is : %d\n", mess.process_index);
             // printf("message from %s, of type %d, (endian %d) to %d groups \n(%d bytes): %s\n",
             //        sender, mess_type, endian_mismatch, num_groups, ret, mess);
         }
@@ -152,7 +157,7 @@ static void receive_messages()
     }
     else if (Is_membership_mess(service_type))
     {
-        ret = SP_get_memb_info((char *) &mess, service_type, &memb_info);
+        ret = SP_get_memb_info((char *)&mess, service_type, &memb_info);
         if (ret < 0)
         {
             printf("BUG: membership message does not have valid body\n");
@@ -167,13 +172,29 @@ static void receive_messages()
                 printf("\t%s\n", &target_groups[i][0]);
             printf("grp id is %d %d %d\n", memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2]);
 
-            if (num_groups == num_processes) { 
+            if (num_groups == num_processes)
+            {
                 printf("Start sending data packets.\n");
             }
 
+            int num_to_send = num_processes;
+            if (INIT_SEND_SIZE < num_to_send)
+            {
+                num_to_send = INIT_SEND_SIZE;
+            }
 
+            struct message data_packet;
+            for (int i = 0; i < num_to_send; i++)
+            {
+                data_packet.tag = TAG_DATA;
+                data_packet.process_index = process_index;
+                data_packet.message_index = num_sent + 1;
+                data_packet.random_number = (rand() % 999999) + 1;
 
+                ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *) &data_packet);
 
+                num_sent++;
+            }
 
             if (Is_caused_join_mess(service_type))
             {
@@ -190,7 +211,7 @@ static void receive_messages()
             else if (Is_caused_network_mess(service_type))
             {
                 printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
-                num_vs_sets = SP_get_vs_sets_info((char *) &mess, &vssets[0], MAX_VSSETS, &my_vsset_index);
+                num_vs_sets = SP_get_vs_sets_info((char *)&mess, &vssets[0], MAX_VSSETS, &my_vsset_index);
                 if (num_vs_sets < 0)
                 {
                     printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
@@ -201,7 +222,7 @@ static void receive_messages()
                 {
                     printf("%s VS set %d has %u members:\n",
                            (i == my_vsset_index) ? ("LOCAL") : ("OTHER"), i, vssets[i].num_members);
-                    ret = SP_get_vs_set_members((char *) &mess, &vssets[i], members, MAX_MEMBERS);
+                    ret = SP_get_vs_set_members((char *)&mess, &vssets[i], members, MAX_MEMBERS);
                     if (ret < 0)
                     {
                         printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
@@ -227,7 +248,7 @@ static void receive_messages()
     else if (Is_reject_mess(service_type))
     {
         printf("REJECTED message from %s, of servicetype 0x%x messtype %d, (endian %d) to %d groups \n(%d bytes): %s\n",
-               sender, service_type, mess_type, endian_mismatch, num_groups, ret, (char *) &mess);
+               sender, service_type, mess_type, endian_mismatch, num_groups, ret, (char *)&mess);
     }
     else
         printf("received message of unknown message type 0x%x with ret %d\n", service_type, ret);
