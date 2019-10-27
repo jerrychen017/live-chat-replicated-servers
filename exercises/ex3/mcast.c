@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    sprintf(User, "user");
+    sprintf(User, "user_jerry");
     sprintf(Spread_name, "4803");
 
     int ret;
@@ -84,8 +84,8 @@ int main(int argc, char *argv[])
 
     E_attach_fd(Mbox, READ_FD, receive_messages, 0, NULL, HIGH_PRIORITY);
 
-    char group[80] = "group";
-    sprintf(groups[0], "group");
+    char group[80] = "jerrys_group";
+    sprintf(groups[0], "jerrys_group");
     ret = SP_join(Mbox, group);
     if (ret < 0)
     {
@@ -175,25 +175,25 @@ static void receive_messages()
             if (num_groups == num_processes)
             {
                 printf("Start sending data packets.\n");
-            }
 
-            int num_to_send = num_processes;
-            if (INIT_SEND_SIZE < num_to_send)
-            {
-                num_to_send = INIT_SEND_SIZE;
-            }
+                int num_to_send = num_processes;
+                if (INIT_SEND_SIZE < num_to_send)
+                {
+                    num_to_send = INIT_SEND_SIZE;
+                }
 
-            struct message data_packet;
-            for (int i = 0; i < num_to_send; i++)
-            {
-                data_packet.tag = TAG_DATA;
-                data_packet.process_index = process_index;
-                data_packet.message_index = num_sent + 1;
-                data_packet.random_number = (rand() % 999999) + 1;
+                struct message data_packet;
+                for (int i = 0; i < num_to_send; i++)
+                {
+                    data_packet.tag = TAG_DATA;
+                    data_packet.process_index = process_index;
+                    data_packet.message_index = num_sent + 1;
+                    data_packet.random_number = (rand() % 999999) + 1;
 
-                ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *) &data_packet);
+                    ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
 
-                num_sent++;
+                    num_sent++;
+                }
             }
 
             if (Is_caused_join_mess(service_type))
