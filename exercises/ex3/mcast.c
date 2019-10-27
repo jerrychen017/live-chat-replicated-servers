@@ -81,12 +81,14 @@ int main(int argc, char *argv[])
     E_init();
 
     E_attach_fd(Mbox, READ_FD, receive_messages, 0, NULL, HIGH_PRIORITY);
-    E_handle_events();
 
     char group[80] = "group";
     ret = SP_join(Mbox, group);
-    if (ret < 0)
+    if (ret < 0) {
         SP_error(ret);
+    }
+
+    E_handle_events();
 }
 
 static void receive_messages()
