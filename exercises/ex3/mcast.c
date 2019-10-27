@@ -1,5 +1,9 @@
 #include "message.h"
 #include "sp.h"
+#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static char User[80];
 static char Spread_name[80];
@@ -136,8 +140,8 @@ static void receive_messages()
         if (Is_agreed_mess(service_type))
         {
             printf("received AGREED ");
-            printf("message from %s, of type %d, (endian %d) to %d groups \n(%d bytes): %s\n",
-                   sender, mess_type, endian_mismatch, num_groups, ret, mess);
+            // printf("message from %s, of type %d, (endian %d) to %d groups \n(%d bytes): %s\n",
+            //        sender, mess_type, endian_mismatch, num_groups, ret, mess);
         }
         else
         {
@@ -146,7 +150,7 @@ static void receive_messages()
     }
     else if (Is_membership_mess(service_type))
     {
-        ret = SP_get_memb_info(mess, service_type, &memb_info);
+        ret = SP_get_memb_info((char *) &mess, service_type, &memb_info);
         if (ret < 0)
         {
             printf("BUG: membership message does not have valid body\n");
@@ -184,7 +188,7 @@ static void receive_messages()
             else if (Is_caused_network_mess(service_type))
             {
                 printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
-                num_vs_sets = SP_get_vs_sets_info(mess, &vssets[0], MAX_VSSETS, &my_vsset_index);
+                num_vs_sets = SP_get_vs_sets_info((char *) &mess, &vssets[0], MAX_VSSETS, &my_vsset_index);
                 if (num_vs_sets < 0)
                 {
                     printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
@@ -195,7 +199,7 @@ static void receive_messages()
                 {
                     printf("%s VS set %d has %u members:\n",
                            (i == my_vsset_index) ? ("LOCAL") : ("OTHER"), i, vssets[i].num_members);
-                    ret = SP_get_vs_set_members(mess, &vssets[i], members, MAX_MEMBERS);
+                    ret = SP_get_vs_set_members((char *) &mess, &vssets[i], members, MAX_MEMBERS);
                     if (ret < 0)
                     {
                         printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
@@ -221,7 +225,7 @@ static void receive_messages()
     else if (Is_reject_mess(service_type))
     {
         printf("REJECTED message from %s, of servicetype 0x%x messtype %d, (endian %d) to %d groups \n(%d bytes): %s\n",
-               sender, service_type, mess_type, endian_mismatch, num_groups, ret, mess);
+               sender, service_type, mess_type, endian_mismatch, num_groups, ret, (char *) &mess);
     }
     else
         printf("received message of unknown message type 0x%x with ret %d\n", service_type, ret);
