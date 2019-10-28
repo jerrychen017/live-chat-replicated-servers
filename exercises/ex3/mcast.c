@@ -148,7 +148,7 @@ static void receive_messages()
             // printf("received AGREED ");
             // send new messages if received my message
 
-            switch (mess.tag)
+            switch (mess_type)
             {
             case TAG_DATA:
             {
@@ -162,7 +162,6 @@ static void receive_messages()
                     {
                         for (int i = 0; i < SEND_SIZE && num_sent < num_messages; i++)
                         {
-                            data_packet.tag = TAG_DATA;
                             data_packet.process_index = process_index;
                             data_packet.message_index = num_sent + 1;
                             data_packet.random_number = (rand() % 999999) + 1;
@@ -173,10 +172,7 @@ static void receive_messages()
 
                     if (num_delivered == num_messages)
                     {
-                        data_packet.tag = TAG_END;
                         data_packet.process_index = process_index;
-                        // data_packet.message_index = num_sent + 1;
-                        // data_packet.random_number = (rand() % 999999) + 1;
                         ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_END, sizeof(struct message), (char *)&data_packet);
                         break;
                     }
@@ -248,7 +244,6 @@ static void receive_messages()
 
                 for (int i = 0; i < num_to_send; i++)
                 {
-                    data_packet.tag = TAG_DATA;
                     data_packet.process_index = process_index;
                     data_packet.message_index = num_sent + 1;
                     data_packet.random_number = (rand() % 999999) + 1;
@@ -260,12 +255,17 @@ static void receive_messages()
 
                     num_sent++;
                 }
+
+                if (num_sent == num_messages)
+                {
+                    data_packet.process_index = process_index;
+                    ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_END, sizeof(struct message), (char *)&data_packet);
+                }
             }
         }
     }
 }
 
-    
 struct timeval diffTime(struct timeval left, struct timeval right)
 {
     struct timeval diff;

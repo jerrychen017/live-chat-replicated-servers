@@ -5,7 +5,6 @@
 #define TAG_END 1
 
 struct message {
-    unsigned int tag;
     unsigned int process_index; // starts from 1
     unsigned int message_index; // starts from 1
     unsigned int random_number;
@@ -17,7 +16,7 @@ struct message {
 */
 
 #define INIT_SEND_SIZE 65 // 30
-#define SEND_SIZE 20 // 10
+#define SEND_SIZE  // 10
 
 
 
