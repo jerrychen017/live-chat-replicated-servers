@@ -21,7 +21,7 @@ static char Private_group[MAX_GROUP_NAME];
 static char groups[10][MAX_GROUP_NAME];
 const char group[80] = "jerrys_group-test";
 static mailbox Mbox;
-static int Num_sent;
+// static int Num_sent;
 static unsigned int Previous_len;
 static int To_exit = 0;
 
@@ -191,6 +191,8 @@ static void receive_messages()
                     num_delivered++; // index that all machines have delivered up to
                     fprintf(fd, "%2d, %8d, %8d\n", mess.process_index, mess.message_index,
                             mess.random_number);
+                    printf("delivered upto%d\n", num_delivered);
+                    printf("sent %d\n", num_sent);
                     if (num_delivered % SEND_SIZE == 0)
                     {
                         for (int i = 0; i < SEND_SIZE && num_sent < num_messages; i++)
@@ -274,7 +276,7 @@ static void receive_messages()
             {
                 gettimeofday(&start_time, NULL);
                 printf("Start sending data packets.\n");
-                int num_to_send = num_processes;
+                int num_to_send = num_messages;
                 if (INIT_SEND_SIZE < num_to_send)
                 {
                     num_to_send = INIT_SEND_SIZE;
