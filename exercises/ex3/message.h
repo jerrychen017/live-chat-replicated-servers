@@ -16,8 +16,8 @@ struct message {
  Tuning hyperparameters
 */
 
-#define INIT_SEND_SIZE 10
-#define SEND_SIZE 1
+#define INIT_SEND_SIZE 20
+#define SEND_SIZE 10
 
 
 

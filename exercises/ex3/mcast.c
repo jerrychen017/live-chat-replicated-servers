@@ -19,6 +19,7 @@ static char Spread_name[80];
 
 static char Private_group[MAX_GROUP_NAME];
 static char groups[10][MAX_GROUP_NAME];
+const char group[80] = "jerrys_group-test";
 static mailbox Mbox;
 static int Num_sent;
 static unsigned int Previous_len;
@@ -74,7 +75,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    sprintf(User, "user_jerry");
+    sprintf(User, "process_%d", process_index);
     sprintf(Spread_name, "4803");
 
     int ret;
@@ -87,6 +88,7 @@ int main(int argc, char *argv[])
     if (!SP_version(&mver, &miver, &pver))
     {
         printf("main: Illegal variables passed to SP_version()\n");
+        printf("bye1\n");
         Bye();
     }
 
@@ -94,7 +96,16 @@ int main(int argc, char *argv[])
     if (ret != ACCEPT_SESSION)
     {
         SP_error(ret);
+        printf("bye2\n");
         Bye();
+    }
+
+    sprintf(groups[0], "jerrys_group-test");
+    ret = SP_join(Mbox, group);
+    if (ret < 0)
+    {
+        SP_error(ret);
+        printf("bye3\n");
     }
 
     // initialize finished array
@@ -113,16 +124,8 @@ int main(int argc, char *argv[])
 
     E_attach_fd(Mbox, READ_FD, receive_messages, 0, NULL, HIGH_PRIORITY);
 
-    char group[80] = "jerrys_group";
-    sprintf(groups[0], "jerrys_group");
-    ret = SP_join(Mbox, group);
-    if (ret < 0)
-    {
-        SP_error(ret);
-    }
-
     E_handle_events();
-    return ( 0 );
+    return (0);
 }
 
 static void receive_messages()
@@ -159,16 +162,16 @@ static void receive_messages()
         }
     }
 
-    if (ret < 0)
-    {
-        if (!To_exit)
-        {
-            SP_error(ret);
-            printf("\n============================\n");
-            printf("\nBye.\n");
-        }
-        exit(0);
-    }
+    // if (ret < 0)
+    // {
+    //     if (!To_exit)
+    //     {
+    //         SP_error(ret);
+    //         printf("\n============================\n");
+    //         printf("\nBye.\n");
+    //     }
+    //     exit(0);
+    // }
 
     struct message data_packet;
     if (Is_regular_mess(service_type))
@@ -188,15 +191,19 @@ static void receive_messages()
                     num_delivered++; // index that all machines have delivered up to
                     fprintf(fd, "%2d, %8d, %8d\n", mess.process_index, mess.message_index,
                             mess.random_number);
-                    for (int i = 0; i < SEND_SIZE && num_sent < num_messages; i++)
+                    if (num_delivered % SEND_SIZE == 0)
                     {
-                        data_packet.tag = TAG_DATA;
-                        data_packet.process_index = process_index;
-                        data_packet.message_index = num_sent + 1;
-                        data_packet.random_number = (rand() % 999999) + 1;
-                        ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
-                        num_sent++;
-                    }
+                        for (int i = 0; i < SEND_SIZE && num_sent < num_messages; i++)
+                        {
+                            data_packet.tag = TAG_DATA;
+                            data_packet.process_index = process_index;
+                            data_packet.message_index = num_sent + 1;
+                            data_packet.random_number = (rand() % 999999) + 1;
+                            ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_DATA, sizeof(struct message), (char *)&data_packet);
+                            // ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
+                            num_sent++;
+                        }
+                    } 
                 }
                 else
                 { // receive messages from other machines
@@ -210,7 +217,8 @@ static void receive_messages()
                     data_packet.process_index = process_index;
                     // data_packet.message_index = num_sent + 1;
                     // data_packet.random_number = (rand() % 999999) + 1;
-                    ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
+                    ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_END, sizeof(struct message), (char *)&data_packet);
+                    // ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
                 }
                 break;
             }
@@ -278,7 +286,13 @@ static void receive_messages()
                     data_packet.process_index = process_index;
                     data_packet.message_index = num_sent + 1;
                     data_packet.random_number = (rand() % 999999) + 1;
-                    ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
+                    ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_DATA, sizeof(struct message), (char *)&data_packet);
+                    // ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
+                    if (ret < 0)
+                    {
+                        printf("multicast error\n");
+                    }
+
                     num_sent++;
                 }
             }
@@ -356,15 +370,17 @@ struct timeval diffTime(struct timeval left, struct timeval right)
 {
     struct timeval diff;
 
-    diff.tv_sec  = left.tv_sec - right.tv_sec;
+    diff.tv_sec = left.tv_sec - right.tv_sec;
     diff.tv_usec = left.tv_usec - right.tv_usec;
 
-    if (diff.tv_usec < 0) {
+    if (diff.tv_usec < 0)
+    {
         diff.tv_usec += 1000000;
         diff.tv_sec--;
     }
 
-    if (diff.tv_sec < 0) {
+    if (diff.tv_sec < 0)
+    {
         printf("WARNING: diffTime has negative result, returning 0!\n");
         diff.tv_sec = diff.tv_usec = 0;
     }
