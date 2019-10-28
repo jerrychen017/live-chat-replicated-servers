@@ -7,42 +7,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*
-same username and group name for all machines?
-receive one and send one? 
-use event handler? 
-
-*/
-
 static char User[80];
 static char Spread_name[80];
 
 static char Private_group[MAX_GROUP_NAME];
-static char groups[10][MAX_GROUP_NAME];
-const char group[80] = "jerrys_group-test";
+static const char group[80] = "minqi-jerry-group";
 static mailbox Mbox;
-// static int Num_sent;
-static unsigned int Previous_len;
-static int To_exit = 0;
 
 static int num_messages;
 static int num_processes;
 static int process_index;
 static int num_sent = 0;
 static int num_delivered = 0;
-
 static bool finished[10];
-
 static FILE *fd;
 //  starting time of transfer
 static struct timeval start_time;
 
 #define MAX_MESSLEN 102400
-#define MAX_VSSETS 10
 #define MAX_MEMBERS 100
 
 static void receive_messages();
-static void Bye();
 static struct timeval diffTime(struct timeval left, struct timeval right);
 
 int main(int argc, char *argv[])
@@ -88,19 +73,16 @@ int main(int argc, char *argv[])
     if (!SP_version(&mver, &miver, &pver))
     {
         printf("main: Illegal variables passed to SP_version()\n");
-        printf("bye1\n");
-        Bye();
+        exit(1);
     }
 
     ret = SP_connect_timeout(Spread_name, User, 0, 1, &Mbox, Private_group, test_timeout);
     if (ret != ACCEPT_SESSION)
     {
         SP_error(ret);
-        printf("bye2\n");
-        Bye();
+        exit(1);
     }
 
-    sprintf(groups[0], "jerrys_group-test");
     ret = SP_join(Mbox, group);
     if (ret < 0)
     {
@@ -130,20 +112,15 @@ int main(int argc, char *argv[])
 
 static void receive_messages()
 {
-    // static char mess[MAX_MESSLEN];
     struct message mess;
     char sender[MAX_GROUP_NAME];
     char target_groups[MAX_MEMBERS][MAX_GROUP_NAME];
     membership_info memb_info;
-    vs_set_info vssets[MAX_VSSETS];
-    unsigned int my_vsset_index;
-    int num_vs_sets;
-    char members[MAX_MEMBERS][MAX_GROUP_NAME];
     int num_groups;
     int service_type;
     int16 mess_type;
     int endian_mismatch;
-    int i, j;
+    int i;
     int ret;
 
     service_type = 0;
@@ -161,17 +138,6 @@ static void receive_messages()
                              &mess_type, &endian_mismatch, sizeof(struct message), (char *)&mess);
         }
     }
-
-    // if (ret < 0)
-    // {
-    //     if (!To_exit)
-    //     {
-    //         SP_error(ret);
-    //         printf("\n============================\n");
-    //         printf("\nBye.\n");
-    //     }
-    //     exit(0);
-    // }
 
     struct message data_packet;
     if (Is_regular_mess(service_type))
@@ -191,8 +157,7 @@ static void receive_messages()
                     num_delivered++; // index that all machines have delivered up to
                     fprintf(fd, "%2d, %8d, %8d\n", mess.process_index, mess.message_index,
                             mess.random_number);
-                    printf("delivered upto%d\n", num_delivered);
-                    printf("sent %d\n", num_sent);
+
                     if (num_delivered % SEND_SIZE == 0)
                     {
                         for (int i = 0; i < SEND_SIZE && num_sent < num_messages; i++)
@@ -202,25 +167,24 @@ static void receive_messages()
                             data_packet.message_index = num_sent + 1;
                             data_packet.random_number = (rand() % 999999) + 1;
                             ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_DATA, sizeof(struct message), (char *)&data_packet);
-                            // ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
                             num_sent++;
                         }
-                    } 
+                    }
+
+                    if (num_delivered == num_messages)
+                    {
+                        data_packet.tag = TAG_END;
+                        data_packet.process_index = process_index;
+                        // data_packet.message_index = num_sent + 1;
+                        // data_packet.random_number = (rand() % 999999) + 1;
+                        ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_END, sizeof(struct message), (char *)&data_packet);
+                        break;
+                    }
                 }
                 else
                 { // receive messages from other machines
                     fprintf(fd, "%2d, %8d, %8d\n", mess.process_index, mess.message_index,
                             mess.random_number);
-                }
-
-                if (num_delivered == num_messages)
-                {
-                    data_packet.tag = TAG_END;
-                    data_packet.process_index = process_index;
-                    // data_packet.message_index = num_sent + 1;
-                    // data_packet.random_number = (rand() % 999999) + 1;
-                    ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_END, sizeof(struct message), (char *)&data_packet);
-                    // ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
                 }
                 break;
             }
@@ -289,7 +253,6 @@ static void receive_messages()
                     data_packet.message_index = num_sent + 1;
                     data_packet.random_number = (rand() % 999999) + 1;
                     ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_DATA, sizeof(struct message), (char *)&data_packet);
-                    // ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
                     if (ret < 0)
                     {
                         printf("multicast error\n");
@@ -298,76 +261,11 @@ static void receive_messages()
                     num_sent++;
                 }
             }
-
-            if (Is_caused_join_mess(service_type))
-            {
-                printf("Due to the JOIN of %s\n", memb_info.changed_member);
-            }
-            else if (Is_caused_leave_mess(service_type))
-            {
-                printf("Due to the LEAVE of %s\n", memb_info.changed_member);
-            }
-            else if (Is_caused_disconnect_mess(service_type))
-            {
-                printf("Due to the DISCONNECT of %s\n", memb_info.changed_member);
-            }
-            else if (Is_caused_network_mess(service_type))
-            {
-                printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
-                num_vs_sets = SP_get_vs_sets_info((char *)&mess, &vssets[0], MAX_VSSETS, &my_vsset_index);
-                if (num_vs_sets < 0)
-                {
-                    printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
-                    SP_error(num_vs_sets);
-                    exit(1);
-                }
-                for (i = 0; i < num_vs_sets; i++)
-                {
-                    printf("%s VS set %d has %u members:\n",
-                           (i == my_vsset_index) ? ("LOCAL") : ("OTHER"), i, vssets[i].num_members);
-                    ret = SP_get_vs_set_members((char *)&mess, &vssets[i], members, MAX_MEMBERS);
-                    if (ret < 0)
-                    {
-                        printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
-                        SP_error(ret);
-                        exit(1);
-                    }
-                    for (j = 0; j < vssets[i].num_members; j++)
-                        printf("\t%s\n", members[j]);
-                }
-            }
         }
-        else if (Is_transition_mess(service_type))
-        {
-            printf("received TRANSITIONAL membership for group %s\n", sender);
-        }
-        else if (Is_caused_leave_mess(service_type))
-        {
-            printf("received membership message that left group %s\n", sender);
-        }
-        else
-            printf("received incorrecty membership message of type 0x%x\n", service_type);
     }
-    else if (Is_reject_mess(service_type))
-    {
-        printf("REJECTED message from %s, of servicetype 0x%x messtype %d, (endian %d) to %d groups \n(%d bytes): %s\n",
-               sender, service_type, mess_type, endian_mismatch, num_groups, ret, (char *)&mess);
-    }
-    else
-        printf("received message of unknown message type 0x%x with ret %d\n", service_type, ret);
 }
 
-static void Bye()
-{
-    To_exit = 1;
-
-    printf("\nBye.\n");
-
-    SP_disconnect(Mbox);
-
-    exit(0);
-}
-
+    
 struct timeval diffTime(struct timeval left, struct timeval right)
 {
     struct timeval diff;
