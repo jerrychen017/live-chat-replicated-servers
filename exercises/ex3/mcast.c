@@ -1,9 +1,18 @@
 #include "message.h"
 #include "sp.h"
 #include <sys/types.h>
+#include <sys/time.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/*
+same username and group name for all machines?
+receive one and send one? 
+use event handler? 
+
+*/
 
 static char User[80];
 static char Spread_name[80];
@@ -19,6 +28,13 @@ static int num_messages;
 static int num_processes;
 static int process_index;
 static int num_sent = 0;
+static int num_delivered = 0;
+
+static bool finished[10];
+
+static FILE *fd;
+//  starting time of transfer
+static struct timeval start_time;
 
 #define MAX_MESSLEN 102400
 #define MAX_VSSETS 10
@@ -26,6 +42,7 @@ static int num_sent = 0;
 
 static void receive_messages();
 static void Bye();
+static struct timeval diffTime(struct timeval left, struct timeval right);
 
 int main(int argc, char *argv[])
 {
@@ -80,6 +97,18 @@ int main(int argc, char *argv[])
         Bye();
     }
 
+    // initialize finished array
+    for (int i = 0; i < num_processes; i++)
+    {
+        finished[i] = false;
+    }
+
+    // initialize and open file descriptor
+    char filename[7];
+    filename[6] = '\0';
+    sprintf(filename, "%d.out", process_index);
+    fd = fopen(filename, "w");
+
     E_init();
 
     E_attach_fd(Mbox, READ_FD, receive_messages, 0, NULL, HIGH_PRIORITY);
@@ -93,6 +122,7 @@ int main(int argc, char *argv[])
     }
 
     E_handle_events();
+    return ( 0 );
 }
 
 static void receive_messages()
@@ -140,13 +170,73 @@ static void receive_messages()
         exit(0);
     }
 
+    struct message data_packet;
     if (Is_regular_mess(service_type))
-    {
+    { /* receive message packet*/
         // mess[ret] = 0;
         if (Is_agreed_mess(service_type))
         {
-            printf("received AGREED ");
-            printf("mess process index is : %d\n", mess.process_index);
+            // printf("received AGREED ");
+            // send new messages if received my message
+
+            switch (mess.tag)
+            {
+            case TAG_DATA:
+            {
+                if (mess.process_index == process_index)
+                {
+                    num_delivered++; // index that all machines have delivered up to
+                    fprintf(fd, "%2d, %8d, %8d\n", mess.process_index, mess.message_index,
+                            mess.random_number);
+                    for (int i = 0; i < SEND_SIZE && num_sent < num_messages; i++)
+                    {
+                        data_packet.tag = TAG_DATA;
+                        data_packet.process_index = process_index;
+                        data_packet.message_index = num_sent + 1;
+                        data_packet.random_number = (rand() % 999999) + 1;
+                        ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
+                        num_sent++;
+                    }
+                }
+                else
+                { // receive messages from other machines
+                    fprintf(fd, "%2d, %8d, %8d\n", mess.process_index, mess.message_index,
+                            mess.random_number);
+                }
+
+                if (num_delivered == num_messages)
+                {
+                    data_packet.tag = TAG_END;
+                    data_packet.process_index = process_index;
+                    // data_packet.message_index = num_sent + 1;
+                    // data_packet.random_number = (rand() % 999999) + 1;
+                    ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
+                }
+                break;
+            }
+            case TAG_END:
+            {
+                printf("received end\n");
+                finished[mess.process_index - 1] = true;
+                bool all_finished = true;
+                for (int i = 0; i < num_processes; i++)
+                {
+                    all_finished = all_finished && finished[i];
+                }
+                if (all_finished)
+                {
+                    // record ending time of transfer
+                    struct timeval end_time;
+                    gettimeofday(&end_time, NULL);
+                    struct timeval diff_time = diffTime(end_time, start_time);
+                    double seconds = diff_time.tv_sec + ((double)diff_time.tv_usec) / 1000000;
+                    printf("Trasmission time is %.2f seconds\n", seconds);
+                    exit(0);
+                }
+                break;
+            }
+            }
+
             // printf("message from %s, of type %d, (endian %d) to %d groups \n(%d bytes): %s\n",
             //        sender, mess_type, endian_mismatch, num_groups, ret, mess);
         }
@@ -156,7 +246,7 @@ static void receive_messages()
         }
     }
     else if (Is_membership_mess(service_type))
-    {
+    { /* receive membership packet*/
         ret = SP_get_memb_info((char *)&mess, service_type, &memb_info);
         if (ret < 0)
         {
@@ -174,24 +264,21 @@ static void receive_messages()
 
             if (num_groups == num_processes)
             {
+                gettimeofday(&start_time, NULL);
                 printf("Start sending data packets.\n");
-
                 int num_to_send = num_processes;
                 if (INIT_SEND_SIZE < num_to_send)
                 {
                     num_to_send = INIT_SEND_SIZE;
                 }
 
-                struct message data_packet;
                 for (int i = 0; i < num_to_send; i++)
                 {
                     data_packet.tag = TAG_DATA;
                     data_packet.process_index = process_index;
                     data_packet.message_index = num_sent + 1;
                     data_packet.random_number = (rand() % 999999) + 1;
-
                     ret = SP_multigroup_multicast(Mbox, AGREED_MESS, 1, (const char(*)[MAX_GROUP_NAME])groups, 1, sizeof(struct message), (char *)&data_packet);
-
                     num_sent++;
                 }
             }
@@ -263,4 +350,24 @@ static void Bye()
     SP_disconnect(Mbox);
 
     exit(0);
+}
+
+struct timeval diffTime(struct timeval left, struct timeval right)
+{
+    struct timeval diff;
+
+    diff.tv_sec  = left.tv_sec - right.tv_sec;
+    diff.tv_usec = left.tv_usec - right.tv_usec;
+
+    if (diff.tv_usec < 0) {
+        diff.tv_usec += 1000000;
+        diff.tv_sec--;
+    }
+
+    if (diff.tv_sec < 0) {
+        printf("WARNING: diffTime has negative result, returning 0!\n");
+        diff.tv_sec = diff.tv_usec = 0;
+    }
+
+    return diff;
 }

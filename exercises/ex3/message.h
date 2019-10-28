@@ -17,6 +17,7 @@ struct message {
 */
 
 #define INIT_SEND_SIZE 10
+#define SEND_SIZE 1
 
 
 
