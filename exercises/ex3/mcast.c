@@ -11,7 +11,7 @@ static char User[80];
 static char Spread_name[80];
 
 static char Private_group[MAX_GROUP_NAME];
-static const char group[80] = "minqi-jerry-group";
+static const char group[80] = "jerry-minqi-group";
 static mailbox Mbox;
 
 static int num_messages;
@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
     if (ret < 0)
     {
         SP_error(ret);
-        printf("bye3\n");
+        exit(1);
     }
 
     // initialize finished array
@@ -142,12 +142,8 @@ static void receive_messages()
     struct message data_packet;
     if (Is_regular_mess(service_type))
     { /* receive message packet*/
-        // mess[ret] = 0;
         if (Is_agreed_mess(service_type))
         {
-            // printf("received AGREED ");
-            // send new messages if received my message
-
             switch (mess_type)
             {
             case TAG_DATA:
@@ -186,7 +182,6 @@ static void receive_messages()
             }
             case TAG_END:
             {
-                printf("received end\n");
                 finished[mess.process_index - 1] = true;
                 bool all_finished = true;
                 for (int i = 0; i < num_processes; i++)
@@ -206,9 +201,6 @@ static void receive_messages()
                 break;
             }
             }
-
-            // printf("message from %s, of type %d, (endian %d) to %d groups \n(%d bytes): %s\n",
-            //        sender, mess_type, endian_mismatch, num_groups, ret, mess);
         }
         else
         {
@@ -230,7 +222,6 @@ static void receive_messages()
                    sender, num_groups, mess_type);
             for (i = 0; i < num_groups; i++)
                 printf("\t%s\n", &target_groups[i][0]);
-            printf("grp id is %d %d %d\n", memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2]);
 
             if (num_groups == num_processes)
             {
