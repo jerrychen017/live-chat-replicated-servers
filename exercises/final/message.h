@@ -23,9 +23,9 @@ struct message
     */
     unsigned int timestamp;
     /**/
-    char[20] creator;  // <username> of the creator
-    char[100] message; // TODO: change message limit
-    char[100] liked_users;
+    char creator[20];  // <username> of the creator
+    char message[100]; // TODO: change message limit
+    char liked_users[100];
 };
 
 #endif
