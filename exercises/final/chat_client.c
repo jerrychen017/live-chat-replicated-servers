@@ -22,7 +22,6 @@ static const char servers_group[80] = "servers";
 static mailbox Mbox;
 
 static int server_index;
-static int[5][5] matrix;
 
 int main(int argc, char *argv[])
 {
