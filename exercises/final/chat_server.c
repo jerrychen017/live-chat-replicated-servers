@@ -31,6 +31,11 @@ static FILE *log5_fd;
 static int server_index;
 static int matrix[5][5];
 
+#define MAX_MESSLEN 102400
+#define MAX_MEMBERS 100
+
+static void receive_messages();
+
 int main(int argc, char *argv[])
 {
     if (argc != 2)
