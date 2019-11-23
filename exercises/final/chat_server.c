@@ -146,13 +146,13 @@ static void receive_messages()
         {
             switch (mess_type)
             {
-            case TAG_DATA:
+            case CLIENT_C:
             {
-
                 break;
             }
-            case TAG_END:
+            case CLIENT_J:
             {
+                break;
             }
             }
         }
@@ -174,39 +174,50 @@ static void receive_messages()
         {
             printf("Received REGULAR membership for group %s with %d members, where I am member %d:\n",
                    sender, num_groups, mess_type);
-            for (i = 0; i < num_groups; i++)
-                printf("\t%s\n", &target_groups[i][0]);
+            
+            if( Is_caused_join_mess( service_type ) )
+			{
+				printf("Due to the JOIN of %s\n", memb_info.changed_member );
+			}else if( Is_caused_leave_mess( service_type ) ){
+				printf("Due to the LEAVE of %s\n", memb_info.changed_member );
+			}else if( Is_caused_disconnect_mess( service_type ) ){
+				printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
+			}else if( Is_caused_network_mess( service_type ) ){
+				printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
+                                num_vs_sets = SP_get_vs_sets_info( mess, &vssets[0], MAX_VSSETS, &my_vsset_index );
+                                if (num_vs_sets < 0) {
+                                        printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
+                                        SP_error( num_vs_sets );
+                                        exit( 1 );
+                                }
+                                for( i = 0; i < num_vs_sets; i++ )
+                                {
+                                        printf("%s VS set %d has %u members:\n",
+                                               (i  == my_vsset_index) ?
+                                               ("LOCAL") : ("OTHER"), i, vssets[i].num_members );
+                                        ret = SP_get_vs_set_members(mess, &vssets[i], members, MAX_MEMBERS);
+                                        if (ret < 0) {
+                                                printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
+                                                SP_error( ret );
+                                                exit( 1 );
+                                        }
+                                        for( j = 0; j < vssets[i].num_members; j++ )
+                                                printf("\t%s\n", members[j] );
+                                }
+			}
+		}else if( Is_transition_mess(   service_type ) ) {
+			printf("received TRANSITIONAL membership for group %s\n", sender );
+		}else if( Is_caused_leave_mess( service_type ) ){
+			printf("received membership message that left group %s\n", sender );
+		}else printf("received incorrecty membership message of type 0x%x\n", service_type );
+        } else if ( Is_reject_mess( service_type ) )
+        {
+		printf("REJECTED message from %s, of servicetype 0x%x messtype %d, (endian %d) to %d groups \n(%d bytes): %s\n",
+			sender, service_type, mess_type, endian_mismatch, num_groups, ret, mess );
+	}else printf("received message of unknown message type 0x%x with ret %d\n", service_type, ret);
 
-            if (num_groups == num_processes)
-            {
-                gettimeofday(&start_time, NULL);
-                printf("Start sending data packets.\n");
-                int num_to_send = num_messages;
-                if (INIT_SEND_SIZE < num_to_send)
-                {
-                    num_to_send = INIT_SEND_SIZE;
-                }
 
-                for (int i = 0; i < num_to_send; i++)
-                {
-                    data_packet.process_index = process_index;
-                    data_packet.message_index = num_sent + 1;
-                    data_packet.random_number = (rand() % 999999) + 1;
-                    ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_DATA, sizeof(struct message), (char *)&data_packet);
-                    if (ret < 0)
-                    {
-                        printf("multicast error\n");
-                    }
-
-                    num_sent++;
-                }
-
-                if (num_sent == num_messages)
-                {
-                    data_packet.process_index = process_index;
-                    ret = SP_multicast(Mbox, AGREED_MESS, group, TAG_END, sizeof(struct message), (char *)&data_packet);
-                }
-            }
+            
         }
     }
 }
