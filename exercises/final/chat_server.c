@@ -93,22 +93,22 @@ int main(int argc, char *argv[])
     // open state and log files in appending and reading mode
     char state_filename[20];
     sprintf(state_filename, "server%d-state.out", server_index);
-    fd = fopen(state_filename, "a+");
+    state_fd = fopen(state_filename, "a+");
     char log1_filename[20];
     sprintf(log1_filename, "server%d-log1.out", server_index);
-    fd = fopen(log1_filename, "a+");
+    log1_fd = fopen(log1_filename, "a+");
     char log2_filename[20];
     sprintf(log2_filename, "server%d-log2.out", server_index);
-    fd = fopen(log2_filename, "a+");
+    log2_fd = fopen(log2_filename, "a+");
     char log3_filename[20];
     sprintf(log3_filename, "server%d-log3.out", server_index);
-    fd = fopen(log3_filename, "a+");
+    log3_fd = fopen(log3_filename, "a+");
     char log4_filename[20];
     sprintf(log4_filename, "server%d-log4.out", server_index);
-    fd = fopen(log4_filename, "a+");
+    log4_fd = fopen(log4_filename, "a+");
     char log5_filename[20];
     sprintf(log5_filename, "server%d-log5.out", server_index);
-    fd = fopen(log5_filename, "a+");
+    log5_fd = fopen(log5_filename, "a+");
 
     E_init();
     E_attach_fd(Mbox, READ_FD, receive_messages, 0, NULL, HIGH_PRIORITY);
