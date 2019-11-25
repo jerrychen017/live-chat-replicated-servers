@@ -21,6 +21,7 @@ static int server_index;
 static bool connected;
 
 static char server_client_group[80 + 15];
+static char server[80];
 
 static	void	Print_menu();
 static	void	User_command();
@@ -31,6 +32,8 @@ int main(int argc, char *argv[])
 {
     loggedIn = false;
     connected = false;
+    server[0] = '\0';
+    server_client_group[0] = '\0';
 
     E_init();
     E_attach_fd( 0, READ_FD, User_command, 0, NULL, LOW_PRIORITY );
@@ -118,7 +121,7 @@ static void User_command()
             test_timeout.sec = 5;
             test_timeout.usec = 0;
 
-            // start client's private group
+            // Start client's private group
             ret = SP_connect_timeout( Spread_name, username, 0, 1, &Mbox, Private_group, test_timeout );
             if (ret != ACCEPT_SESSION) {
 		        SP_error( ret );
@@ -127,7 +130,7 @@ static void User_command()
             loggedIn = true;
             ret = sscanf(Private_group, "#%*[^#]#ugrad%d", &ugrad_index);
             if (ret < 1) {
-                printf("ERROR: cannot parse ugrad index from private group name\n");
+                printf("Error: cannot parse ugrad index from private group name\n");
                 break;
             }
             E_attach_fd( Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY );
@@ -167,17 +170,26 @@ static void User_command()
 
             // TODO: Clear data structures, like messages, participants
 
+            // Join new server-client group
             ret = sprintf( server_client_group, "server%d-%s-ugrad%d", server_index, username, ugrad_index );
             if (ret < 3) {
-                printf("ERROR: cannot construct server-client group name\n");
+                printf("Error: cannot construct server-client group name\n");
                 break;
             }
-            printf("server-client group: %s\n", server_client_group);
             ret = SP_join( Mbox, server_client_group );
 			if (ret < 0) {
                 SP_error( ret );
             }
-            connected = true;
+
+            // Send CONNECT message to the server
+            ret = sprintf(server, "server%d", server_index);
+            if (ret < 1) {
+                printf("Error: cannot construct name of server's public group\n");
+                break;
+            }
+            ret = SP_multicast(Mbox, AGREED_MESS, server, CONNECT, 0, message);
+
+            // TODO: start timer and check if server responds and connects
 
             break;
         }
@@ -222,10 +234,11 @@ static void Read_message()
 	    if (!To_exit) {
             // Spread daemon crashes
 			SP_error( ret );
-			printf("\n============================\n");
-			printf("\nBye.\n");
+            printf("Client: Spread daemon crashes; disconnect from server and log out\n");
+            E_detach_fd(Mbox, READ_FD);
+            loggedIn = false;
+            connected = false;
 		}
-		exit(0);
 	}
 
     if (Is_regular_mess(service_type)) {
@@ -246,7 +259,43 @@ static void Read_message()
             for( i=0; i < num_groups; i++ ) {
                 printf("\t%s\n", &target_groups[i][0] );
             }
-		    printf("grp id is %d %d %d\n",memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2] );
+
+            // Membership change in server-client group
+            if (strcmp(sender, server_client_group) == 0) {
+                if (Is_caused_join_mess(service_type)) {
+                    
+                    if (strcmp(memb_info.changed_member, Private_group) == 0) {
+                        // client itself joins server-client group
+                    } else {
+                        // server joins server-client group
+                        int temp_server_index = 0;
+                        ret = sscanf(memb_info.changed_member, "#server%d#ugrad%*d", &temp_server_index);
+                        if (ret < 1 || temp_server_index != server_index) {
+                            printf("Error: cannot parse server index from server name\n");
+                        } else {
+                            printf("Client: successfully connected to server%d\n", server_index);
+                            connected = true;
+                        }
+                    }
+                    
+                } else if (Is_caused_disconnect_mess(service_type)
+                            || Is_caused_network_mess(service_type)) {
+                    
+                    // TODO: Leave server-room group if exists
+                    // TODO: Clear data structures, like messages, participants
+                    
+                    printf("Client: server%d disconnects; please reconnect with another server\n", server_index);
+                    ret = SP_leave( Mbox, server_client_group );
+			        if (ret < 0) {
+                        SP_error( ret );
+                    }
+                    connected = false;
+                } else if (Is_caused_leave_mess(service_type)) {
+                    printf("Warning: should not receive LEAVE message in %s\n", server_client_group);
+                }
+            }
+
+            printf("\n============================\n");
 
 		    if (Is_caused_join_mess(service_type)) {
 			    printf("Due to the JOIN of %s\n", memb_info.changed_member );
@@ -277,10 +326,12 @@ static void Read_message()
                     }
 			    }
 		    } 
+        } else if (Is_caused_leave_mess(service_type)) {
+
+			printf("Client: leave group %s\n", sender);
+	        
         } else if (Is_transition_mess(service_type)) {
 			printf("received TRANSITIONAL membership for group %s\n", sender );
-		} else if (Is_caused_leave_mess(service_type)) {
-			printf("received membership message that left group %s\n", sender );
 		} else {
             printf("received incorrecty membership message of type 0x%x\n", service_type );
         }

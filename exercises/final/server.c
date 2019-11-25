@@ -1,97 +1,87 @@
-/*
-<server_index> is in the range [1,5]
-we assume each server program runs with a unique <server_index> 
-
-MEMBRESHIPS: 
-* this server's public group
-* 'servers' group
-*/
-#include "message.h"
 #include "sp.h"
+#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
-#include <sys/time.h>
-#include <sys/types.h>
+
+#include "message.h"
 
 static char User[80];
-static char Spread_name[80];
+static char Spread_name[80] = PORT;
 static char Private_group[MAX_GROUP_NAME];
+static mailbox Mbox;
+static int To_exit = 0;
+
 static char public_group[80];
 static const char servers_group[80] = "servers";
-static mailbox Mbox;
+static char username[80];
+int ugrad_index;
 
-static FILE *state_fd;
+/*static FILE *state_fd;
 static FILE *log1_fd;
 static FILE *log2_fd;
 static FILE *log3_fd;
 static FILE *log4_fd;
-static FILE *log5_fd;
+static FILE *log5_fd;*/
 
 static int server_index;
-static int matrix[5][5];
+//static int matrix[5][5];
 
-#define MAX_MESSLEN 102400
-#define MAX_MEMBERS 100
+static void Read_message();
+static void Bye();
 
-static void receive_messages();
+// TODO: make sure one server index is used exactly once
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2)
-    {
-        printf("chat_server usage: chatserver <server_index>.\n");
+    int	ret;
+
+    if (argc != 2) {
+        printf("server usage: chatserver <server_index>.\n");
         exit(1);
     }
-    server_index = atoi(argv[1]);
-    if (server_index < 1 || server_index > 5)
-    {
-        perror("chat_server error: invalid <server_index>.\n");
+    ret = sscanf(argv[1], "%d", &server_index);
+    if (ret < 1) {
+        printf("server usage: invalid <server_index> [1-5].\n");
+        exit(1);
+    }
+    if (server_index < 1 || server_index > 5) {
+        printf("server usage: invalid <server_index> [1-5].\n");
+        exit(1);
     }
 
     sprintf(User, "server%d", server_index);
     sprintf(public_group, "server%d", server_index);
-    sprintf(Spread_name, "4803");
 
-    int ret;
-    int mver, miver, pver;
     sp_time test_timeout;
-
     test_timeout.sec = 5;
     test_timeout.usec = 0;
 
-    if (!SP_version(&mver, &miver, &pver))
-    {
-        printf("main: Illegal variables passed to SP_version()\n");
-        exit(1);
-    }
     ret = SP_connect_timeout(Spread_name, User, 0, 1, &Mbox, Private_group, test_timeout);
-    if (ret != ACCEPT_SESSION)
-    {
+    if (ret != ACCEPT_SESSION) {
         SP_error(ret);
-        exit(1);
+        Bye();
     }
 
-    // joining this server's public group
+    // joining the server's public group
     ret = SP_join(Mbox, public_group);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         SP_error(ret);
         exit(1);
     }
+    printf("Server: join public group %s\n", public_group);
 
     // joining servers group
     ret = SP_join(Mbox, servers_group);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         SP_error(ret);
         exit(1);
     }
-
-    // TODO: initialize matrix
+    printf("Server: join group %s\n", servers_group);
 
     // open state and log files in appending and reading mode
-    char state_filename[20];
+    /*char state_filename[20];
     sprintf(state_filename, "server%d-state.out", server_index);
     state_fd = fopen(state_filename, "a+");
     char log1_filename[20];
@@ -108,103 +98,196 @@ int main(int argc, char *argv[])
     log4_fd = fopen(log4_filename, "a+");
     char log5_filename[20];
     sprintf(log5_filename, "server%d-log5.out", server_index);
-    log5_fd = fopen(log5_filename, "a+");
+    log5_fd = fopen(log5_filename, "a+");*/
+
+    /* TODO:
+    if there is state file
+        Reconstruct data structures from state file; retrieve 5 lamport timestamps
+    else
+        initialize empty data structures, timestamp = 0 
+
+    for every server
+        if log file exists
+            read from the line matching with the corresponding timestamp
+            save logs in memory
+        else
+            initialize empty logs[server_index] list
+    
+    Execute logs in the order of lamport timestamp + process_index
+        update rooms, matrix and timestamp accordingly
+    
+    */
+    
+    // TODO: initialize matrix
 
     E_init();
-    E_attach_fd(Mbox, READ_FD, receive_messages, 0, NULL, HIGH_PRIORITY);
+    E_attach_fd(Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY);
     E_handle_events();
     return (0);
 }
 
-static void receive_messages()
+static void Read_message()
 {
-    struct message mess;
-    char sender[MAX_GROUP_NAME];
-    char target_groups[MAX_MEMBERS][MAX_GROUP_NAME];
-    membership_info memb_info;
-    int num_groups;
-    int service_type;
-    int16 mess_type;
-    int endian_mismatch;
-    int i;
-    int ret;
+    static char	message[MAX_MESS_LEN];
+    char	 sender[MAX_GROUP_NAME];
+    char	 target_groups[MAX_MEMBERS][MAX_GROUP_NAME];
+    membership_info  memb_info;
+    vs_set_info      vssets[MAX_VSSETS];
+    unsigned int     my_vsset_index;
+    int      num_vs_sets;
+    char     members[MAX_MEMBERS][MAX_GROUP_NAME];
+    int		 num_groups;
+    int		 service_type;
+    int16	 mess_type;
+    int		 endian_mismatch;
+    int		 i,j;
+    int		 ret;
 
     service_type = 0;
-    ret = SP_receive(Mbox, &service_type, sender, 100, &num_groups, target_groups,
-                     &mess_type, &endian_mismatch, sizeof(struct message), (char *)&mess);
 
-    if (ret < 0)
-    {
-        if ((ret == GROUPS_TOO_SHORT) || (ret == BUFFER_TOO_SHORT))
-        {
-            service_type = DROP_RECV;
-            printf("\n========Buffers or Groups too Short=======\n");
-            ret = SP_receive(Mbox, &service_type, sender, 100, &num_groups, target_groups,
-                             &mess_type, &endian_mismatch, sizeof(struct message), (char *)&mess);
+    ret = SP_receive( Mbox, &service_type, sender, 100, &num_groups, target_groups, 
+        &mess_type, &endian_mismatch, sizeof(message), message );
+	printf("\n============================\n");
+
+    if (ret < 0) {
+	    if (!To_exit) {
+            // Spread daemon crashes
+            SP_error( ret );
+			printf("\n============================\n");
+			printf("\nBye.\n");
+		}
+        exit(0);
+	}
+
+    if (Is_regular_mess(service_type)) {
+
+        message[ret] = 0;
+
+        if (!Is_agreed_mess(service_type)) {
+            printf("Warning: did not received AGREED message\n");
+            return;
         }
-    }
 
-    struct message packet;
-    if (Is_regular_mess(service_type))
-    { /* receive message packet*/
-        if (Is_agreed_mess(service_type))
-        {
-            switch (mess_type)
+        switch (mess_type) {
+
+            case CONNECT:
             {
-            case CLIENT_C:
-            {
+                char server_client_group[80 + 15];
+                ret = sscanf(sender, "#%[^#]#ugrad%d", username, &ugrad_index);
+                if (ret < 2) {
+                    printf("Error: cannot parse username and ugrad index from client's name\n");
+                    break;
+                }
+                ret = sprintf( server_client_group, "server%d-%s-ugrad%d", server_index, username, ugrad_index );
+                if (ret < 3) {
+                    printf("Error: cannot construct server-client group name\n");
+                    break;
+                }
+                ret = SP_join( Mbox, server_client_group );
+			    if (ret < 0) {
+                    SP_error( ret );
+                }
                 break;
             }
-            case CLIENT_J:
+
+            default:
             {
-                break;
-            }
+                printf("Warning: receive unknown message type\n");
             }
         }
-        else
-        {
-            printf("Warning: didn't receive AGREED \n");
-        }
-    }
-    else if (Is_membership_mess(service_type))
-    { /* receive membership packet*/
-        ret = SP_get_memb_info((char *)&mess, service_type, &memb_info);
-        if (ret < 0)
-        {
+
+
+    } else if (Is_membership_mess(service_type)) {
+        
+        ret = SP_get_memb_info( message, service_type, &memb_info );
+        
+        if (ret < 0) {
             printf("BUG: membership message does not have valid body\n");
-            SP_error(ret);
+            SP_error( ret );
             exit(1);
         }
 
-
-
-        if (Is_reg_memb_mess(service_type))
-        {
+        if (Is_reg_memb_mess(service_type)) {
             printf("Received REGULAR membership for group %s with %d members, where I am member %d:\n",
-                   sender, num_groups, mess_type);
-            
-            if( Is_caused_join_mess( service_type ) )
-			{
-				printf("Due to the JOIN of %s\n", memb_info.changed_member );
-			}else if( Is_caused_leave_mess( service_type ) ){
-				printf("Due to the LEAVE of %s\n", memb_info.changed_member );
-			}else if( Is_caused_disconnect_mess( service_type ) ){
-				printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
-			}else if( Is_caused_network_mess( service_type ) ){
-				printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
-		    }
-	    }else if( Is_transition_mess(   service_type ) ) {
+				sender, num_groups, mess_type );
+            for( i=0; i < num_groups; i++ ) {
+                printf("\t%s\n", &target_groups[i][0] );
+            }
+
+            // Membership change in server-client group
+            if (sscanf(sender, "server%*d-%[^-]-ugrad%d", username, &ugrad_index) == 2) {
+                if (Is_caused_join_mess(service_type)) {
+                    // server itself joins server-client group
+                } else if (Is_caused_leave_mess(service_type)
+                            || Is_caused_disconnect_mess(service_type)
+                            || Is_caused_network_mess(service_type)) {
+
+                    printf("Server: client #%s#ugrad%d disconnects\n", username, ugrad_index);
+                    // client disconnects, or reconnects to another server
+                    /* TODO:
+                    Search all rooms and see if the client is previously in participants[my_server_index]
+                    If the client is previously in a room
+                        send “ROOMCHANGE <client_name> <old_room> <null> <server_index>” to servers group
+                    */
+
+                    // Leave server-client group
+                    ret = SP_leave( Mbox, sender );
+                    if (ret < 0) {
+                        SP_error( ret );
+                    }
+                }
+            }
+
+
+		    if (Is_caused_join_mess(service_type)) {
+			    printf("Due to the JOIN of %s\n", memb_info.changed_member );
+		    } else if (Is_caused_leave_mess(service_type)) {
+			    printf("Due to the LEAVE of %s\n", memb_info.changed_member );
+		    } else if (Is_caused_disconnect_mess(service_type)) {
+			    printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
+		    } else if (Is_caused_network_mess(service_type)) {
+			    printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
+                num_vs_sets = SP_get_vs_sets_info( message, &vssets[0], MAX_VSSETS, &my_vsset_index );
+                if (num_vs_sets < 0) {
+                    printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
+                    SP_error( num_vs_sets );
+                    exit( 1 );
+                }
+                for (i = 0; i < num_vs_sets; i++) {
+                    printf("%s VS set %d has %u members:\n",
+                        (i  == my_vsset_index) ?
+                        ("LOCAL") : ("OTHER"), i, vssets[i].num_members );
+                    ret = SP_get_vs_set_members(message, &vssets[i], members, MAX_MEMBERS);
+                    if (ret < 0) {
+                        printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
+                        SP_error( ret );
+                        exit( 1 );
+                    }
+                    for (j = 0; j < vssets[i].num_members; j++) {
+                        printf("\t%s\n", members[j] );
+                    }
+			    }
+		    } 
+        } else if (Is_caused_leave_mess(service_type)) {
+			
+            printf("Server: leave group %s\n", sender );
+
+		} else if (Is_transition_mess(service_type)) {
 			printf("received TRANSITIONAL membership for group %s\n", sender );
-		}else if( Is_caused_leave_mess( service_type ) ){
-			printf("received membership message that left group %s\n", sender );
 		} else {
             printf("received incorrecty membership message of type 0x%x\n", service_type );
         }
-        
-    } else if ( Is_reject_mess( service_type ) ) {
-		printf("REJECTED message from %s, of servicetype 0x%x messtype %d, (endian %d) to %d groups \n(%d bytes): %s\n",
-			sender, service_type, mess_type, endian_mismatch, num_groups, ret, mess );
-    } else { 
-        printf("received message of unknown message type 0x%x with ret %d\n", service_type, ret); 
+    } else {
+        printf("received message of unknown message type 0x%x with ret %d\n", service_type, ret);
     }
+}
+
+static void Bye()
+{
+	To_exit = 1;
+
+	printf("\nBye.\n");
+
+    SP_disconnect(Mbox);
+	exit(0);
 }
