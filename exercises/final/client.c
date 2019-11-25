@@ -15,9 +15,12 @@ static unsigned int Previous_len;
 static int To_exit = 0;
 
 static char username[80];
+static int ugrad_index;
 static bool loggedIn;
 static int server_index;
 static bool connected;
+
+static char server_client_group[80 + 15];
 
 static	void	Print_menu();
 static	void	User_command();
@@ -63,11 +66,7 @@ static	void	Print_menu()
 static void User_command()
 {
     char	command[130];
-	char	mess[MAX_MESS_LEN];
-	char	group[80];
-	char	groups[10][MAX_GROUP_NAME];
-	int	num_groups;
-	unsigned int mess_len;
+	char	message[MAX_MESS_LEN];
 	int	ret;
 	int	i;
 
@@ -88,7 +87,25 @@ static void User_command()
 				break;
 			}
 
-            // TODO: Leave server-client, server-room groups if exist
+            // username cannot contain hashtag and space
+            for (i = 0; i < strlen(username); i++) {
+                if (username[i] == '#' || username[i] == ' ') {
+                    printf(" invalid username \n");
+				    break;
+                }
+            }
+
+            // TODO: Leave server-room groups if exist
+
+            // Leave previous server-client group if exists
+            if (connected) {
+                ret = SP_leave( Mbox, server_client_group );
+			    if (ret < 0) {
+                    SP_error( ret );
+                }
+                connected = false;
+            }
+
             if (loggedIn) {
                 SP_disconnect(Mbox);
                 loggedIn = false;
@@ -103,13 +120,18 @@ static void User_command()
 
             // start client's private group
             ret = SP_connect_timeout( Spread_name, username, 0, 1, &Mbox, Private_group, test_timeout );
-            printf("here\n");
             if (ret != ACCEPT_SESSION) {
 		        SP_error( ret );
 		        break;
             }
             loggedIn = true;
+            ret = sscanf(Private_group, "#%*[^#]#ugrad%d", &ugrad_index);
+            if (ret < 1) {
+                printf("ERROR: cannot parse ugrad index from private group name\n");
+                break;
+            }
             E_attach_fd( Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY );
+            
             printf("Client: start private group %s\n", Private_group );
 
             break;
@@ -117,6 +139,46 @@ static void User_command()
 
         case 'c':
         {
+            if (!loggedIn) {
+                printf("Client: did not login with command 'u'\n");
+                break;
+            }
+
+            ret = sscanf( &command[2], "%d", &server_index );
+            if (ret < 1) {
+				printf(" invalid server index [1-5] \n");
+				break;
+			}
+            if (server_index < 1 || server_index > 5) {
+                printf(" invalid server index [1-5] \n");
+				break;
+            }
+
+            // TODO: Leave server-room group if exists
+
+            // Leave previous server-client group if exists
+            if (connected) {
+                ret = SP_leave( Mbox, server_client_group );
+			    if (ret < 0) {
+                    SP_error( ret );
+                }
+                connected = false;
+            }
+
+            // TODO: Clear data structures, like messages, participants
+
+            ret = sprintf( server_client_group, "server%d-%s-ugrad%d", server_index, username, ugrad_index );
+            if (ret < 3) {
+                printf("ERROR: cannot construct server-client group name\n");
+                break;
+            }
+            printf("server-client group: %s\n", server_client_group);
+            ret = SP_join( Mbox, server_client_group );
+			if (ret < 0) {
+                SP_error( ret );
+            }
+            connected = true;
+
             break;
         }
 
@@ -156,14 +218,6 @@ static void Read_message()
         &mess_type, &endian_mismatch, sizeof(message), message );
 	printf("\n============================\n");
 
-    /* if( ret < 0 ) {
-        if ( (ret == GROUPS_TOO_SHORT) || (ret == BUFFER_TOO_SHORT) ) {
-            service_type = DROP_RECV;
-            printf("\n========Buffers or Groups too Short=======\n");
-            ret = SP_receive( Mbox, &service_type, sender, MAX_MEMBERS, &num_groups, target_groups, 
-                &mess_type, &endian_mismatch, sizeof(message), message );
-        }
-    }*/
     if (ret < 0) {
 	    if (!To_exit) {
             // Spread daemon crashes
@@ -174,11 +228,69 @@ static void Read_message()
 		exit(0);
 	}
 
+    if (Is_regular_mess(service_type)) {
+
+    } else if (Is_membership_mess(service_type)) {
+        
+        ret = SP_get_memb_info( message, service_type, &memb_info );
+        
+        if (ret < 0) {
+            printf("BUG: membership message does not have valid body\n");
+            SP_error( ret );
+            exit(1);
+        }
+
+        if (Is_reg_memb_mess(service_type)) {
+            printf("Received REGULAR membership for group %s with %d members, where I am member %d:\n",
+				sender, num_groups, mess_type );
+            for( i=0; i < num_groups; i++ ) {
+                printf("\t%s\n", &target_groups[i][0] );
+            }
+		    printf("grp id is %d %d %d\n",memb_info.gid.id[0], memb_info.gid.id[1], memb_info.gid.id[2] );
+
+		    if (Is_caused_join_mess(service_type)) {
+			    printf("Due to the JOIN of %s\n", memb_info.changed_member );
+		    } else if (Is_caused_leave_mess(service_type)) {
+			    printf("Due to the LEAVE of %s\n", memb_info.changed_member );
+		    } else if (Is_caused_disconnect_mess(service_type)) {
+			    printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
+		    } else if (Is_caused_network_mess(service_type)) {
+			    printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
+                num_vs_sets = SP_get_vs_sets_info( message, &vssets[0], MAX_VSSETS, &my_vsset_index );
+                if (num_vs_sets < 0) {
+                    printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
+                    SP_error( num_vs_sets );
+                    exit( 1 );
+                }
+                for (i = 0; i < num_vs_sets; i++) {
+                    printf("%s VS set %d has %u members:\n",
+                        (i  == my_vsset_index) ?
+                        ("LOCAL") : ("OTHER"), i, vssets[i].num_members );
+                    ret = SP_get_vs_set_members(message, &vssets[i], members, MAX_MEMBERS);
+                    if (ret < 0) {
+                        printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
+                        SP_error( ret );
+                        exit( 1 );
+                    }
+                    for (j = 0; j < vssets[i].num_members; j++) {
+                        printf("\t%s\n", members[j] );
+                    }
+			    }
+		    } 
+        } else if (Is_transition_mess(service_type)) {
+			printf("received TRANSITIONAL membership for group %s\n", sender );
+		} else if (Is_caused_leave_mess(service_type)) {
+			printf("received membership message that left group %s\n", sender );
+		} else {
+            printf("received incorrecty membership message of type 0x%x\n", service_type );
+        }
+    } else {
+        printf("received message of unknown message type 0x%x with ret %d\n", service_type, ret);
+    }
+
     printf("\n");
 	printf("Client> ");
 	fflush(stdout);
-
-
 }
 
 static void Bye()
@@ -189,6 +301,9 @@ static void Bye()
     // TODO: Leave server-client, server-room groups if exist
 
     // conditional disconnection
+    if (connected) {
+        SP_leave( Mbox, server_client_group );
+    }
 	if (loggedIn) {
         SP_disconnect(Mbox);
     }
