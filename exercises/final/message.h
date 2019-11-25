@@ -1,17 +1,10 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
-#define CLIENT_C 0
-#define CLIENT_J 1
-#define CLIENT_A 2
-#define CLIENT_L 3
-#define CLIENT_R 4
-#define CLIENT_H 5
-#define SERVER_JOIN_ROOM 6
-#define SERVER_A 7
-#define SERVER_L 8
-#define SERVER_R 9
-#define SERVER_ROOM_CHANGE 10
+#define PORT "10100"
+#define MAX_MESS_LEN 102400
+#define MAX_VSSETS      10
+#define MAX_MEMBERS     100
 
 struct message
 {
