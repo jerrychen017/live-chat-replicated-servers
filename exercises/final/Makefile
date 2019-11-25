@@ -12,10 +12,10 @@ client: client.o
 server: server.o
 	$(LD) -o $@ server.o -ldl $(SP_LIBRARY)
 
-client.o: client.c message.h
+client.o: client.c config.h client.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c client.c
 
-server.o: server.c message.h
+server.o: server.c config.h server.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c server.c
 
 clean:

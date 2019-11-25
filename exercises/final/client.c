@@ -5,7 +5,8 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "message.h"
+#include "config.h"
+#include "client.h"
 
 static char Spread_name[80] = PORT;
 static mailbox Mbox;
@@ -16,12 +17,15 @@ static int To_exit = 0;
 
 static char username[80];
 static int ugrad_index;
-static bool loggedIn;
+static bool logged_in;
 static int server_index;
 static bool connected;
+static char room_name[80];
+static bool joined;
 
+static char server_group[80];
 static char server_client_group[80 + 15];
-static char server[80];
+static char server_room_group[80 + 8];
 
 static	void	Print_menu();
 static	void	User_command();
@@ -30,9 +34,10 @@ static  void	Bye();
 
 int main(int argc, char *argv[])
 {
-    loggedIn = false;
+    logged_in = false;
     connected = false;
-    server[0] = '\0';
+    joined = false;
+    server_group[0] = '\0';
     server_client_group[0] = '\0';
 
     E_init();
@@ -92,8 +97,8 @@ static void User_command()
 
             // username cannot contain hashtag and space
             for (i = 0; i < strlen(username); i++) {
-                if (username[i] == '#' || username[i] == ' ') {
-                    printf(" invalid username \n");
+                if (username[i] == '#' || username[i] == '-') {
+                    printf(" invalid username, cannot contain hashtag, space \n");
 				    break;
                 }
             }
@@ -109,9 +114,9 @@ static void User_command()
                 connected = false;
             }
 
-            if (loggedIn) {
+            if (logged_in) {
                 SP_disconnect(Mbox);
-                loggedIn = false;
+                logged_in = false;
                 E_detach_fd(Mbox, READ_FD);
             }
 
@@ -127,7 +132,7 @@ static void User_command()
 		        SP_error( ret );
 		        break;
             }
-            loggedIn = true;
+            logged_in = true;
             ret = sscanf(Private_group, "#%*[^#]#ugrad%d", &ugrad_index);
             if (ret < 1) {
                 printf("Error: cannot parse ugrad index from private group name\n");
@@ -142,8 +147,8 @@ static void User_command()
 
         case 'c':
         {
-            if (!loggedIn) {
-                printf("Client: did not login with command 'u'\n");
+            if (!logged_in) {
+                printf("Client: did not login using command 'u'\n");
                 break;
             }
 
@@ -182,14 +187,64 @@ static void User_command()
             }
 
             // Send CONNECT message to the server
-            ret = sprintf(server, "server%d", server_index);
+            ret = sprintf(server_group, "server%d", server_index);
             if (ret < 1) {
                 printf("Error: cannot construct name of server's public group\n");
                 break;
             }
-            ret = SP_multicast(Mbox, AGREED_MESS, server, CONNECT, 0, message);
+            ret = SP_multicast(Mbox, AGREED_MESS, server_group, CONNECT, 0, message);
 
             // TODO: start timer and check if server responds and connects
+
+            break;
+        }
+
+        case 'j':
+        {
+            ret = sscanf( &command[2], "%s", room_name );
+            if (ret < 1) {
+				printf(" invalid room name \n");
+				break;
+			}
+
+            // room_name cannot contain hashtag and hyphen
+            for (i = 0; i < strlen(room_name); i++) {
+                if (room_name[i] == '#' || room_name[i] == '-') {
+                    printf(" invalid room name, cannot contain hashtag or hyphen \n");
+				    break;
+                }
+            }
+
+            if (strcmp(room_name, "null") == 0) {
+                printf(" invalid room name, cannot be null\n");
+                break;
+            }
+
+            if (!logged_in) {
+                printf("Client: did not login using command 'u'\n");
+                break;
+            }
+
+            if (!connected) {
+                printf("Client: did not connect with server using command 'c'\n");
+                break;
+            }
+
+            if (joined) {
+                printf("Client: leave previous room %s\n", room_name);
+                ret = SP_leave(Mbox, server_room_group);
+                if (ret < 0) {
+                    SP_error( ret );
+                }
+            }
+
+            sprintf(server_room_group, "server%d-%s", server_index, room_name);
+            ret = SP_join(Mbox, server_room_group);
+            if (ret < 0) {
+                SP_error( ret );
+            }
+
+            ret = SP_multicast(Mbox, AGREED_MESS, server_group, JOIN, strlen(room_name), room_name);
 
             break;
         }
@@ -236,7 +291,7 @@ static void Read_message()
 			SP_error( ret );
             printf("Client: Spread daemon crashes; disconnect from server and log out\n");
             E_detach_fd(Mbox, READ_FD);
-            loggedIn = false;
+            logged_in = false;
             connected = false;
 		}
 	}
@@ -260,7 +315,7 @@ static void Read_message()
                 printf("\t%s\n", &target_groups[i][0] );
             }
 
-            // Membership change in server-client group
+            // ** server-client group **
             if (strcmp(sender, server_client_group) == 0) {
                 if (Is_caused_join_mess(service_type)) {
                     
@@ -355,7 +410,7 @@ static void Bye()
     if (connected) {
         SP_leave( Mbox, server_client_group );
     }
-	if (loggedIn) {
+	if (logged_in) {
         SP_disconnect(Mbox);
     }
 	exit(0);

@@ -5,7 +5,8 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "message.h"
+#include "config.h"
+#include "server.h"
 
 static char User[80];
 static char Spread_name[80] = PORT;
@@ -16,7 +17,9 @@ static int To_exit = 0;
 static char public_group[80];
 static const char servers_group[80] = "servers";
 static char username[80];
-int ugrad_index;
+static int ugrad_index;
+
+static struct room *rooms;
 
 /*static FILE *state_fd;
 static FILE *log1_fd;
@@ -35,6 +38,8 @@ static void Bye();
 
 int main(int argc, char *argv[])
 {
+    rooms = NULL;
+
     int	ret;
 
     if (argc != 2) {
@@ -129,6 +134,7 @@ int main(int argc, char *argv[])
 static void Read_message()
 {
     static char	message[MAX_MESS_LEN];
+    static char to_send[MAX_MESS_LEN];
     char	 sender[MAX_GROUP_NAME];
     char	 target_groups[MAX_MEMBERS][MAX_GROUP_NAME];
     membership_info  memb_info;
@@ -190,6 +196,31 @@ static void Read_message()
                 break;
             }
 
+            case JOIN:
+            {
+                // message = <room_name>
+
+                // TODO: Search rooms and see if the client is previously in any room
+
+                // Send ROOMCHANGE <client_name> <old_room> <new_room> <server_index> to servers group
+                sprintf(to_send, "%s %s %s %d", sender, "null", message, server_index);
+                ret = SP_multicast(Mbox, AGREED_MESS, servers_group, ROOMCHANGE, strlen(to_send), to_send);
+                if (ret < 0) {
+				    SP_error( ret );
+				    Bye();
+			    }
+
+                // Send up to latest 25 messages of this room to the client’s private group
+                struct room* new_room = find_room(rooms, message);
+                get_messages(to_send, new_room);
+
+                ret = SP_multicast(Mbox, AGREED_MESS, sender, MESSAGES, strlen(to_send), to_send);
+                if (ret < 0) {
+				    SP_error( ret );
+				    Bye();
+			    }
+
+            }
             default:
             {
                 printf("Warning: receive unknown message type\n");
@@ -290,4 +321,54 @@ static void Bye()
 
     SP_disconnect(Mbox);
 	exit(0);
+}
+
+struct room* find_room(struct room* rooms, char* room_name)
+{
+    while (rooms != NULL) {
+        if (strcmp(rooms->name, room_name) == 0) {
+            return rooms;
+        }
+    }
+
+    return NULL;
+}
+
+void get_messages(char* to_send, struct room* room) {
+    if (room == NULL || room->messages == NULL) {
+        sprintf(to_send, "%d", 0);
+        return;
+    }
+
+    struct message* end = room->messages;
+    struct message* first = room->messages;
+    int steps = 0;
+    while (end != NULL && steps < 25) {
+        end = end->next;
+        steps++;
+    }
+
+    while (end != NULL) {
+        first = first->next;
+        end = end->next;
+    }
+
+    char messages[5000];
+    char message[200];
+    int num_messages = 0;
+    while (first != NULL) {
+        int num_likes = 0;
+        struct participant* participants = first->liked_by;
+        while (participants != NULL) {
+            num_likes++;
+            participants = participants->next;
+        }
+        sprintf(message, "%d %d %s %d %s\n", first->timestamp, first->server_index, first->creator, num_likes, first->content);
+        strcat(messages, message);
+        num_messages++;
+        first = first->next;
+    }
+
+    sprintf(to_send, "%d %s", num_messages, messages);
+
 }
