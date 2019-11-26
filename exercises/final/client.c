@@ -27,6 +27,9 @@ static char server_room_group[80 + 8];
 
 static struct participant* participants;
 static struct participant* last_participant;
+static struct message* messages;
+static struct message* last_message;
+int num_messages;
 
 static	void	Print_menu();
 static	void	User_command();
@@ -41,6 +44,7 @@ int main(int argc, char *argv[])
     joined = false;
     server_group[0] = '\0';
     server_client_group[0] = '\0';
+
     participants = NULL;
 
     E_init();
@@ -106,7 +110,15 @@ static void User_command()
                 }
             }
 
-            // TODO: Leave server-room groups if exist
+            // Leave server-room groups if exist
+            if (joined) {
+                ret = SP_leave(Mbox, server_room_group);
+                if (ret < 0) {
+                    SP_error( ret );
+                }
+                printf("Client: leave room %s\n", room_name);
+                joined = false;
+            }
 
             // Leave previous server-client group if exists
             if (connected) {
@@ -114,6 +126,7 @@ static void User_command()
 			    if (ret < 0) {
                     SP_error( ret );
                 }
+                printf("Client: disconnect from server %d\n", server_index);
                 connected = false;
             }
 
@@ -123,7 +136,19 @@ static void User_command()
                 E_detach_fd(Mbox, READ_FD);
             }
 
-            // TODO: Clear data structures, like messages, participants, room_name
+            // clear participants list
+            while (participants != NULL) {
+                struct participant* to_delete = participants;
+                participants = participants->next;
+                free(to_delete);
+            }
+            // clear messages list
+            while (messages != NULL) {
+                struct message* message_to_delete = messages;
+                messages = messages->next;
+                free(message_to_delete);
+            }
+            num_messages = 0;
 
             sp_time test_timeout;
             test_timeout.sec = 5;
@@ -165,7 +190,15 @@ static void User_command()
 				break;
             }
 
-            // TODO: Leave server-room group if exists
+            // Leave server-room groups if exist
+            if (joined) {
+                ret = SP_leave(Mbox, server_room_group);
+                if (ret < 0) {
+                    SP_error( ret );
+                }
+                printf("Client: leave room %s\n", room_name);
+                joined = false;
+            }
 
             // Leave previous server-client group if exists
             if (connected) {
@@ -173,10 +206,23 @@ static void User_command()
 			    if (ret < 0) {
                     SP_error( ret );
                 }
+                printf("Client: disconnect from server %d\n", server_index);
                 connected = false;
             }
 
-            // TODO: Clear data structures, like messages, participants
+            // clear participants list
+            while (participants != NULL) {
+                struct participant* to_delete = participants;
+                participants = participants->next;
+                free(to_delete);
+            }
+            // clear messages list
+            while (messages != NULL) {
+                struct message* message_to_delete = messages;
+                messages = messages->next;
+                free(message_to_delete);
+            }
+            num_messages = 0;
 
             // Join new server-client group
             ret = sprintf( server_client_group, "server%d-%s-ugrad%d", server_index, username, ugrad_index );
@@ -317,14 +363,62 @@ static void Read_message()
         switch (mess_type) {
             case MESSAGES:
             {
-                printf("Client: Receive MESSAGES %s\n", message);
+                // clear messages list
+                while (messages != NULL) {
+                    struct message* to_delete = messages;
+                    messages = messages->next;
+                    free(to_delete);
+                }
+                num_messages = 0;
+
+                char message[200];
+                message[0] = '\0';
+                int timestamp;
+                int message_server_index;
+                char creator[80];
+                int num_likes;
+                char content[80];
+                for (i = 0; i < strlen(message); i++) {
+                    message[strlen(message) + 1] = '\0';
+                    message[strlen(message)] = message[i];
+
+                    if (message[i] == '\n') {
+                        // append a message
+                        // Each message: <timestamp> <server_index> <creator> <num_likes> <content>
+                        ret = sscanf(message, "%d %d %s %d %[^\n]\n", &timestamp, &message_server_index, creator, &num_likes, content);
+                        if (ret < 5) {
+                            printf("Error: cannot parse message from MESSAAGES line %s\n", message);
+                            continue;
+                        }
+                        struct message* new_message = malloc(sizeof(struct message));
+                        new_message->timestamp = timestamp;
+                        new_message->server_index = message_server_index;
+                        strcpy(new_message->creator, creator);
+                        new_message->num_likes = num_likes;
+                        strcpy(new_message->content, content);
+                        new_message->next = NULL;
+
+                        if (messages == NULL) {
+                            messages = new_message;
+                            last_message = new_message;
+                        } else {
+                            last_message->next = new_message;
+                            last_message = new_message;
+                        }
+
+                        num_messages++;
+
+                        message[0] = '\0';
+                    }
+                }
+
+                Display();
+
                 break;
             }
 
             case PARTICIPANTS_ROOM:
             {
-                printf("Client: Receive PARTICIPANTS_ROOM %s\n", message);
-
                 // message = <user1> <user2> ...
 
                 // clear participants list
@@ -408,15 +502,37 @@ static void Read_message()
                 } else if (Is_caused_disconnect_mess(service_type)
                             || Is_caused_network_mess(service_type)) {
                     
-                    // TODO: Leave server-room group if exists
-                    // TODO: Clear data structures, like messages, participants
+                    // Leave server-room group if exists
+                    if (joined) {
+                        ret = SP_leave(Mbox, server_room_group);
+                        if (ret < 0) {
+                            SP_error( ret );
+                        }
+                        printf("Client: leave room %s\n", room_name);
+                        joined = false;
+                    }
+
+                    // clear participants list
+                    while (participants != NULL) {
+                        struct participant* to_delete = participants;
+                        participants = participants->next;
+                        free(to_delete);
+                    }
+                    // clear messages list
+                    while (messages != NULL) {
+                        struct message* message_to_delete = messages;
+                        messages = messages->next;
+                        free(message_to_delete);
+                    }
+                    num_messages = 0;
                     
-                    printf("Client: server%d disconnects; please reconnect with another server\n", server_index);
                     ret = SP_leave( Mbox, server_client_group );
 			        if (ret < 0) {
                         SP_error( ret );
                     }
+                    printf("Client: server%d disconnects; please reconnect with another server\n", server_index);
                     connected = false;
+
                 } else if (Is_caused_leave_mess(service_type)) {
                     printf("Warning: should not receive LEAVE message in %s\n", server_client_group);
                 }
@@ -480,7 +596,14 @@ static void Display() {
         cur = cur->next;
     }
     printf("\n");
-    // TODO: print messages
+
+    int line = 1;
+    struct message* message_cur = messages;
+    while (message_cur != NULL) {
+        printf("%d. %s: %-*sLikes: %d\n",
+            line, message_cur->creator, 30, message_cur->content, message_cur->num_likes);
+        message_cur = message_cur->next;
+    }
 }
 
 static void Bye()
@@ -488,9 +611,10 @@ static void Bye()
 	To_exit = 1;
 	printf("\nBye.\n");
 
-    // TODO: Leave server-client, server-room groups if exist
-
-    // conditional disconnection
+    // Leave server-room groups if exist
+    if (joined) {
+        SP_leave(Mbox, server_room_group);
+    }    
     if (connected) {
         SP_leave( Mbox, server_client_group );
     }

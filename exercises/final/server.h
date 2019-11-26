@@ -18,7 +18,7 @@ struct message {
     int server_index;
     char content[80];
     char creator[80];
-    struct participant* liked_by;
+    struct participant* liked_by;   // username, instead of client name
     struct message* next;
 };
 
