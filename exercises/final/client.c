@@ -629,12 +629,11 @@ static void Bye()
 	exit(0);
 }
 
-void connection_timeout_event(int code, void * data) { 
+void connection_timeout_event(int index, void * data) { 
      // Leave current server-room group
     int ret = SP_leave(Mbox, server_client_group);
     if (ret < 0) {
         SP_error( ret );
     }
-    printf("Client: server%d did not respond after timeout\n", code);
-    connected = false; // TODO: we probably don't need it here. Consider deleting it. 
+    printf("Client: server%d did not respond after timeout\n", index);
 }
