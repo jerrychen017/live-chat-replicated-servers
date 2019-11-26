@@ -13,6 +13,8 @@ static char Spread_name[80] = PORT;
 static char Private_group[MAX_GROUP_NAME];
 static mailbox Mbox;
 static int To_exit = 0;
+static bool merging; 
+static char local_vs_set[MAX_MEMBERS][MAX_GROUP_NAME];
 
 static char public_group[80];
 static const char servers_group[80] = "servers";
@@ -43,6 +45,7 @@ static void Bye();
 int main(int argc, char *argv[])
 {
     rooms = NULL;
+    merging = false;
 
     int	ret;
 
@@ -145,6 +148,7 @@ static void Read_message()
     vs_set_info      vssets[MAX_VSSETS];
     unsigned int     my_vsset_index;
     int      num_vs_sets;
+    int      local_vs_set_size; 
     char     members[MAX_MEMBERS][MAX_GROUP_NAME];
     int		 num_groups;
     int		 service_type;
@@ -154,6 +158,7 @@ static void Read_message()
     int		 ret;
 
     service_type = 0;
+    local_vs_set_size = 0; 
 
     ret = SP_receive( Mbox, &service_type, sender, 100, &num_groups, target_groups, 
         &mess_type, &endian_mismatch, sizeof(message), message );
@@ -367,10 +372,19 @@ static void Read_message()
                     SP_error( num_vs_sets );
                     exit( 1 );
                 }
+                
+                local_vs_set_size = 0;
+                for (i = 0; i < num_vs_sets; i++) {
+                    if (i == my_vsset_index) {
+                        local_vs_set_size++; 
+                    }
+                }
+
                 for (i = 0; i < num_vs_sets; i++) {
                     printf("%s VS set %d has %u members:\n",
                         (i  == my_vsset_index) ?
                         ("LOCAL") : ("OTHER"), i, vssets[i].num_members );
+            
                     ret = SP_get_vs_set_members(message, &vssets[i], members, MAX_MEMBERS);
                     if (ret < 0) {
                         printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
@@ -379,8 +393,34 @@ static void Read_message()
                     }
                     for (j = 0; j < vssets[i].num_members; j++) {
                         printf("\t%s\n", members[j] );
+                        // memset(local_vs_set, members[j],local_vs_set_size *);
+                        local_vs_set_size++;
                     }
 			    }
+
+                for (i = 0; i < local_vs_set_size; i++) {
+                    printf("\t%s\n", local_vs_set[i]);
+                    
+                }
+
+                // local vsset_index is 0 
+
+                /*
+                If other servers leave the current network component, the remaining servers 
+                will show up in vssets[my_vsset_index]
+                If some servers join the current network component, newly joined servers will form
+                a vsset for each of the network component they came from. 
+                */
+                // for (int i = 0; i < num_vs_sets; i++) {
+                //     if (i != my_vsset_index) { 
+                //         for (j = 0; j < vssets[i].num_members; j++) {
+                //             printf("\t%s\n", members[j] );
+                //             vssets[my_vsset_index].num_members[]
+                //             local_vs_set_size++;
+                //         }
+                //     }    
+                // }
+                
 		    } 
         } else if (Is_caused_leave_mess(service_type)) {
 			

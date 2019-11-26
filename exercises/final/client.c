@@ -636,5 +636,5 @@ void connection_timeout_event(int code, void * data) {
         SP_error( ret );
     }
     printf("Client: server%d did not respond after timeout\n", code);
-    connected = false; 
+    connected = false; // TODO: we probably don't need it here. Consider deleting it. 
 }
