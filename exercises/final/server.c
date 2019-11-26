@@ -329,13 +329,20 @@ static void Read_message()
                             || Is_caused_disconnect_mess(service_type)
                             || Is_caused_network_mess(service_type)) {
 
-                    printf("Server: client #%s#ugrad%d disconnects\n", username, ugrad_index);
                     // client disconnects, or reconnects to another server
-                    /* TODO:
-                    Search all rooms and see if the client is previously in participants[my_server_index]
-                    If the client is previously in a room
-                        send “ROOMCHANGE <client_name> <old_room> <null> <my_server_index>” to servers group
-                    */
+                    printf("Server: client #%s#ugrad%d disconnects\n", username, ugrad_index);
+                    
+                    // If the client is previously in a room
+                    struct room* room = find_room_of_client(rooms, memb_info.changed_member, my_server_index);
+                    if (room != NULL) {
+                        // Send "ROOMCHANGE <client_name> <old_room> <null> <my_server_index>f" to servers group
+                        sprintf(to_send, "%s %s null %d", memb_info.changed_member, room->name, my_server_index);
+                        ret = SP_multicast(Mbox, AGREED_MESS, servers_group, ROOMCHANGE, strlen(to_send), to_send);
+                        if (ret < 0) {
+				            SP_error( ret );
+				            Bye();
+			            }
+                    }
 
                     // Leave server-client group
                     ret = SP_leave( Mbox, sender );
@@ -441,7 +448,6 @@ struct room* find_room_of_client(struct room* rooms, char* client_name, int serv
 {
     while (rooms != NULL) {
         struct participant* participants = rooms->participants[server_index - 1];
-        printf("call find_client\n");
         if (find_client(participants, client_name)) {
             return rooms;
         }
@@ -453,8 +459,6 @@ struct room* find_room_of_client(struct room* rooms, char* client_name, int serv
 bool find_client(struct participant* list, char* client_name)
 {
     while (list != NULL) {
-        printf("find_client find %s\n", client_name);
-        printf("list name is %s\n", list->name);
         if (strcmp(list->name, client_name) == 0) {
             return true;
         }
@@ -532,10 +536,8 @@ void get_messages(char* to_send, struct room* room) {
         end = end->next;
     }
 
-    char messages[5000];
-    messages[0] = '\0';
+    to_send[0] = '\0';
     char message[200];
-    int num_messages = 0;
     while (first != NULL) {
         int num_likes = 0;
         struct participant* participants = first->liked_by;
@@ -543,13 +545,11 @@ void get_messages(char* to_send, struct room* room) {
             num_likes++;
             participants = participants->next;
         }
+        // Every message: <timestamp> <server_index> <creator> <num_likes> <content>\n
         sprintf(message, "%d %d %s %d %s\n", first->timestamp, first->server_index, first->creator, num_likes, first->content);
-        strcat(messages, message);
-        num_messages++;
+        strcat(to_send, message);
         first = first->next;
     }
-
-    sprintf(to_send, "%d %s", num_messages, messages);
 
 }
 
@@ -596,19 +596,14 @@ void get_participants(char* to_send, struct room* room)
         }
     }
 
-    // Construct "PARTICIPANTS_ROOM <num_participants> <user1> <user2> ..." message
-    char usernames[MAX_MESS_LEN - 4];
-    usernames[0] = '\0';
-    int num_participants = 0;
+    // Construct "PARTICIPANTS_ROOM <user1> <user2> ..." message
+    to_send[0] = '\0';
     struct participant* cur = list;
     while (cur != NULL) {
-        strcat(usernames, " ");
-        strcat(usernames, cur->name);
+        strcat(to_send, cur->name);
+        strcat(to_send, " ");
         cur = cur->next;
-        num_participants++;
     }
-
-    sprintf(to_send, "%d%s", num_participants, usernames);
 
     // delete the list
     while (list != NULL) {

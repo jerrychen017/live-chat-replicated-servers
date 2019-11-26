@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define PORT "10030"
+#define PORT "10100"
 #define MAX_MESS_LEN 102400
 #define MAX_VSSETS      10
 #define MAX_MEMBERS     100

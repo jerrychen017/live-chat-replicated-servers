@@ -25,9 +25,13 @@ static char server_group[80];
 static char server_client_group[80 + 15];
 static char server_room_group[80 + 8];
 
+static struct participant* participants;
+static struct participant* last_participant;
+
 static	void	Print_menu();
 static	void	User_command();
 static	void	Read_message();
+static  void    Display();
 static  void	Bye();
 
 int main(int argc, char *argv[])
@@ -37,6 +41,7 @@ int main(int argc, char *argv[])
     joined = false;
     server_group[0] = '\0';
     server_client_group[0] = '\0';
+    participants = NULL;
 
     E_init();
     E_attach_fd( 0, READ_FD, User_command, 0, NULL, LOW_PRIORITY );
@@ -319,6 +324,43 @@ static void Read_message()
             case PARTICIPANTS_ROOM:
             {
                 printf("Client: Receive PARTICIPANTS_ROOM %s\n", message);
+
+                // message = <user1> <user2> ...
+
+                // clear participants list
+                while (participants != NULL) {
+                    struct participant* to_delete = participants;
+                    participants = participants->next;
+                    free(to_delete);
+                }
+
+                char client_name[80];
+                client_name[0] = '\0';
+                for (i = 0; i < strlen(message); i++) {
+                    if (message[i] != ' ') {
+                        client_name[strlen(client_name) + 1] = '\0';
+                        client_name[strlen(client_name)] = message[i];
+                    } else {
+
+                        // append a participant
+                        struct participant* new_participant = malloc(sizeof(struct participant));
+                        strcpy(new_participant->name, client_name);
+                        new_participant->next = NULL;
+
+                        if (participants == NULL) {
+                            participants = new_participant;
+                            last_participant = new_participant;
+                        } else {
+                            last_participant->next = new_participant;
+                            last_participant = new_participant;
+                        }
+
+                        client_name[0] = '\0';
+                    }
+                }
+
+                Display();
+
                 break;
             }
 
@@ -427,6 +469,18 @@ static void Read_message()
     printf("\n");
 	printf("Client> ");
 	fflush(stdout);
+}
+
+static void Display() {
+    printf("Room: %s\n", room_name);
+    printf("Current participants: ");
+    struct participant* cur = participants;
+    while (cur != NULL) {
+        printf("%s ", cur->name);
+        cur = cur->next;
+    }
+    printf("\n");
+    // TODO: print messages
 }
 
 static void Bye()
