@@ -16,8 +16,12 @@ static int To_exit = 0;
 
 static char public_group[80];
 static const char servers_group[80] = "servers";
+static char server_room_group[80 + 8];
+
 static char username[80];
 static int ugrad_index;
+static char room_name[80];
+static char client_name[MAX_GROUP_NAME];
 
 static struct room *rooms;
 
@@ -28,7 +32,7 @@ static FILE *log3_fd;
 static FILE *log4_fd;
 static FILE *log5_fd;*/
 
-static int server_index;
+static int my_server_index;
 //static int matrix[5][5];
 
 static void Read_message();
@@ -46,18 +50,18 @@ int main(int argc, char *argv[])
         printf("server usage: chatserver <server_index>.\n");
         exit(1);
     }
-    ret = sscanf(argv[1], "%d", &server_index);
+    ret = sscanf(argv[1], "%d", &my_server_index);
     if (ret < 1) {
         printf("server usage: invalid <server_index> [1-5].\n");
         exit(1);
     }
-    if (server_index < 1 || server_index > 5) {
+    if (my_server_index < 1 || my_server_index > 5) {
         printf("server usage: invalid <server_index> [1-5].\n");
         exit(1);
     }
 
-    sprintf(User, "server%d", server_index);
-    sprintf(public_group, "server%d", server_index);
+    sprintf(User, "server%d", my_server_index);
+    sprintf(public_group, "server%d", my_server_index);
 
     sp_time test_timeout;
     test_timeout.sec = 5;
@@ -87,22 +91,22 @@ int main(int argc, char *argv[])
 
     // open state and log files in appending and reading mode
     /*char state_filename[20];
-    sprintf(state_filename, "server%d-state.out", server_index);
+    sprintf(state_filename, "server%d-state.out", my_server_index);
     state_fd = fopen(state_filename, "a+");
     char log1_filename[20];
-    sprintf(log1_filename, "server%d-log1.out", server_index);
+    sprintf(log1_filename, "server%d-log1.out", my_server_index);
     log1_fd = fopen(log1_filename, "a+");
     char log2_filename[20];
-    sprintf(log2_filename, "server%d-log2.out", server_index);
+    sprintf(log2_filename, "server%d-log2.out", my_server_index);
     log2_fd = fopen(log2_filename, "a+");
     char log3_filename[20];
-    sprintf(log3_filename, "server%d-log3.out", server_index);
+    sprintf(log3_filename, "server%d-log3.out", my_server_index);
     log3_fd = fopen(log3_filename, "a+");
     char log4_filename[20];
-    sprintf(log4_filename, "server%d-log4.out", server_index);
+    sprintf(log4_filename, "server%d-log4.out", my_server_index);
     log4_fd = fopen(log4_filename, "a+");
     char log5_filename[20];
-    sprintf(log5_filename, "server%d-log5.out", server_index);
+    sprintf(log5_filename, "server%d-log5.out", my_server_index);
     log5_fd = fopen(log5_filename, "a+");*/
 
     /* TODO:
@@ -184,11 +188,12 @@ static void Read_message()
                     printf("Error: cannot parse username and ugrad index from client's name\n");
                     break;
                 }
-                ret = sprintf( server_client_group, "server%d-%s-ugrad%d", server_index, username, ugrad_index );
+                ret = sprintf( server_client_group, "server%d-%s-ugrad%d", my_server_index, username, ugrad_index );
                 if (ret < 3) {
                     printf("Error: cannot construct server-client group name\n");
                     break;
                 }
+                printf("Server: client %s requests connection\n", sender);
                 ret = SP_join( Mbox, server_client_group );
 			    if (ret < 0) {
                     SP_error( ret );
@@ -198,29 +203,97 @@ static void Read_message()
 
             case JOIN:
             {
+                // sender = client's private group
                 // message = <room_name>
+                sscanf(message, "%s", room_name);
 
-                // TODO: Search rooms and see if the client is previously in any room
+                // Search rooms and see if the client is previously in any room
+                struct room* old_room = find_room_of_client(rooms, sender, my_server_index);
+                char old_room_name[80];
+                if (old_room == NULL) {
+                    strcpy(old_room_name, "null");
+                } else {
+                    strcpy(old_room_name, old_room->name);
+                }
 
-                // Send ROOMCHANGE <client_name> <old_room> <new_room> <server_index> to servers group
-                sprintf(to_send, "%s %s %s %d", sender, "null", message, server_index);
+                // Send ROOMCHANGE <client_name> <old_room> <new_room> <my_server_index> to servers group
+                sprintf(to_send, "%s %s %s %d", sender, old_room_name, room_name, my_server_index);
                 ret = SP_multicast(Mbox, AGREED_MESS, servers_group, ROOMCHANGE, strlen(to_send), to_send);
                 if (ret < 0) {
 				    SP_error( ret );
 				    Bye();
 			    }
 
-                // Send up to latest 25 messages of this room to the client’s private group
-                struct room* new_room = find_room(rooms, message);
-                get_messages(to_send, new_room);
+                printf("Server: client %s requests to switch from %s to %s\n", sender, old_room_name, room_name);
 
+                // Send up to latest 25 messages of this room to the client’s private group
+                struct room* new_room = find_room(rooms, room_name);
+                get_messages(to_send, new_room);
                 ret = SP_multicast(Mbox, AGREED_MESS, sender, MESSAGES, strlen(to_send), to_send);
                 if (ret < 0) {
 				    SP_error( ret );
 				    Bye();
 			    }
-
+                break;
             }
+
+            case ROOMCHANGE:
+            {
+                // message = <client_name> <old_room> <new_room> <server_index>
+                char old_room_name[80];
+                char new_room_name[80];
+                int server_index;
+                sscanf(message, "%s %s %s %d", client_name, old_room_name, new_room_name, &server_index);
+
+                printf("Receive ROOMCHANGE %s\n", message);
+
+                if (strcmp(old_room_name, "null") != 0) {
+                    // Remove client from participants[server_index] in the old room
+                    struct room* old_room = find_room(rooms, old_room_name);
+                    if (old_room == NULL) {
+                        printf("Error: old %s does not exist", old_room_name);
+                    }
+                    ret = remove_client(old_room, client_name, server_index);
+                    if (ret < 0) {
+                        printf("Error: fail to remove client %s from %s", client_name, old_room_name);
+                    } else {
+                        printf("Server: remove client %s from %s\n", client_name, old_room_name);
+                        // Send new participant list to the server-room group
+                        get_participants(to_send, old_room);
+                        sprintf(server_room_group, "server%d-%s", my_server_index, old_room_name);
+                        ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
+                        if (ret < 0) {
+				            SP_error( ret );
+				            Bye();
+			            }
+                    }
+                }
+
+                if (strcmp(new_room_name, "null") != 0) {
+                    // Add client to participants[server_index] in the new room
+                    struct room* new_room = find_room(rooms, new_room_name);
+                    if (new_room == NULL) {
+                        new_room = create_room(&rooms, new_room_name);
+                    }
+                    ret = add_client(new_room, client_name, server_index);
+                    if (ret < 0) {
+                        printf("Error: fail to add client %s to %s", client_name, new_room_name);
+                    } else {
+                        printf("Server: add client %s to %s\n", client_name, new_room_name);
+                        // Send new participant list to the server-room group
+                        get_participants(to_send, new_room);
+                        sprintf(server_room_group, "server%d-%s", my_server_index, new_room_name);
+                        ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
+                        if (ret < 0) {
+				            SP_error( ret );
+				            Bye();
+			            }
+                    }
+                }
+
+                break;
+            }
+            
             default:
             {
                 printf("Warning: receive unknown message type\n");
@@ -249,6 +322,9 @@ static void Read_message()
             if (sscanf(sender, "server%*d-%[^-]-ugrad%d", username, &ugrad_index) == 2) {
                 if (Is_caused_join_mess(service_type)) {
                     // server itself joins server-client group
+                    if (strcmp(memb_info.changed_member, Private_group) == 0) {
+                        printf("Server: connect with client #%s#ugrad%d\n", username, ugrad_index);
+                    }
                 } else if (Is_caused_leave_mess(service_type)
                             || Is_caused_disconnect_mess(service_type)
                             || Is_caused_network_mess(service_type)) {
@@ -258,7 +334,7 @@ static void Read_message()
                     /* TODO:
                     Search all rooms and see if the client is previously in participants[my_server_index]
                     If the client is previously in a room
-                        send “ROOMCHANGE <client_name> <old_room> <null> <server_index>” to servers group
+                        send “ROOMCHANGE <client_name> <old_room> <null> <my_server_index>” to servers group
                     */
 
                     // Leave server-client group
@@ -323,15 +399,118 @@ static void Bye()
 	exit(0);
 }
 
+/* Helper functions */
+
+struct room* create_room(struct room** rooms_ref, char* room_name)
+{
+    struct room* new_room = malloc(sizeof(struct room));
+    strcpy(new_room->name, room_name);
+    for (int i = 0; i < 5; i++) {
+        new_room->participants[i] = NULL;
+    }
+    new_room->messages = NULL;
+    new_room->next = NULL;
+
+    rooms = *rooms_ref;
+    if (rooms == NULL) {
+        *rooms_ref = new_room;
+        return new_room;
+    }
+
+    while (rooms->next != NULL) {
+        rooms = rooms->next;
+    }
+
+    rooms->next = new_room;
+    return new_room;
+}
+
 struct room* find_room(struct room* rooms, char* room_name)
 {
     while (rooms != NULL) {
         if (strcmp(rooms->name, room_name) == 0) {
             return rooms;
         }
+        rooms = rooms->next;
     }
 
     return NULL;
+}
+
+struct room* find_room_of_client(struct room* rooms, char* client_name, int server_index)
+{
+    while (rooms != NULL) {
+        struct participant* participants = rooms->participants[server_index - 1];
+        printf("call find_client\n");
+        if (find_client(participants, client_name)) {
+            return rooms;
+        }
+        rooms = rooms->next;
+    }
+    return NULL;
+}
+
+bool find_client(struct participant* list, char* client_name)
+{
+    while (list != NULL) {
+        printf("find_client find %s\n", client_name);
+        printf("list name is %s\n", list->name);
+        if (strcmp(list->name, client_name) == 0) {
+            return true;
+        }
+        list = list->next;
+    }
+    return false;
+}
+
+int add_client(struct room* room, char* client_name, int server_index)
+{
+    if (room == NULL) {
+        return 0;
+    }
+
+    struct participant* new_participant = malloc(sizeof(struct participant));
+    strcpy(new_participant->name, client_name);
+    new_participant->next = NULL;
+
+    struct participant* participants = room->participants[server_index - 1];
+
+    if (participants == NULL) {
+        room->participants[server_index - 1] = new_participant;
+        return 0;
+    }
+
+    while (participants->next != NULL) {
+        participants = participants->next;
+    }
+
+    participants->next = new_participant;
+    return 0;
+}
+
+int remove_client(struct room* room, char* client_name, int server_index)
+{
+    if (room == NULL) {
+        return -1;
+    }
+    
+    struct participant* participants = room->participants[server_index - 1];
+
+    struct participant dummy;
+    dummy.next = participants;
+
+    struct participant* cur = &dummy;
+    while (cur->next != NULL) {
+        if (strcmp(cur->next->name, client_name) == 0) {
+            struct participant* to_delete = cur->next;
+            cur->next = cur->next->next;
+            free(to_delete);
+            room->participants[server_index - 1] = dummy.next;
+            return 0;
+        }
+        cur = cur->next;
+    }
+    return -1;
 }
 
 void get_messages(char* to_send, struct room* room) {
@@ -354,6 +533,7 @@ void get_messages(char* to_send, struct room* room) {
     }
 
     char messages[5000];
+    messages[0] = '\0';
     char message[200];
     int num_messages = 0;
     while (first != NULL) {
@@ -370,5 +550,71 @@ void get_messages(char* to_send, struct room* room) {
     }
 
     sprintf(to_send, "%d %s", num_messages, messages);
+
+}
+
+void get_participants(char* to_send, struct room* room)
+{
+    if (room == NULL) {
+        printf("Warning: room is NULL in get_participants() method\n");
+        sprintf(to_send, "%d", 0);
+        return;
+    }
+    
+    struct participant* list = NULL;
+    struct participant* last_node = NULL;
+    
+    for (int i = 0; i < 5; i++) {
+        struct participant* participants = room->participants[i];
+        while (participants != NULL) {
+            int ret = sscanf(participants->name, "#%[^#]#ugrad%*d", username);
+            if (ret < 1) {
+                printf("Error: cannot parse username from client name %s\n", participants->name);
+                participants = participants->next;
+                continue;
+            }
+
+            // Check if the username is already in usernames list
+            if (find_client(list, username)) {
+                participants = participants->next;
+                continue;
+            }
+
+            // add new username to list
+            struct participant* new_username = malloc(sizeof(struct participant));
+            strcpy(new_username->name, username);
+            new_username->next = NULL;
+
+            if (list == NULL) {
+                list = new_username;
+                last_node = new_username;
+            } else {
+                last_node->next = new_username;
+                last_node = new_username;
+            }
+            participants = participants->next;
+        }
+    }
+
+    // Construct "PARTICIPANTS_ROOM <num_participants> <user1> <user2> ..." message
+    char usernames[MAX_MESS_LEN - 4];
+    usernames[0] = '\0';
+    int num_participants = 0;
+    struct participant* cur = list;
+    while (cur != NULL) {
+        strcat(usernames, " ");
+        strcat(usernames, cur->name);
+        cur = cur->next;
+        num_participants++;
+    }
+
+    sprintf(to_send, "%d%s", num_participants, usernames);
+
+    // delete the list
+    while (list != NULL) {
+        struct participant* to_delete = list;
+        list = list->next;
+        free(to_delete);
+    }
 
 }

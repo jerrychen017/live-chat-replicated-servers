@@ -11,8 +11,6 @@
 static char Spread_name[80] = PORT;
 static mailbox Mbox;
 static char Private_group[MAX_GROUP_NAME];
-static int Num_sent;
-static unsigned int Previous_len;
 static int To_exit = 0;
 
 static char username[80];
@@ -230,21 +228,27 @@ static void User_command()
                 break;
             }
 
+            // Leave previous server-room group, if exists
             if (joined) {
-                printf("Client: leave previous room %s\n", room_name);
+                printf("Client: leave previous room\n");
                 ret = SP_leave(Mbox, server_room_group);
                 if (ret < 0) {
                     SP_error( ret );
                 }
+                joined = false;
             }
 
+            // Join new server-room group
             sprintf(server_room_group, "server%d-%s", server_index, room_name);
             ret = SP_join(Mbox, server_room_group);
             if (ret < 0) {
                 SP_error( ret );
             }
+            joined = true;
 
+            // Send “JOIN <room_name>” message to the server’s public group
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, JOIN, strlen(room_name), room_name);
+            printf("request to join room %s\n", room_name);
 
             break;
         }
@@ -297,6 +301,32 @@ static void Read_message()
 	}
 
     if (Is_regular_mess(service_type)) {
+
+        message[ret] = 0;
+
+        if (!Is_agreed_mess(service_type)) {
+            printf("Warning: did not received AGREED message\n");
+            return;
+        }
+
+        switch (mess_type) {
+            case MESSAGES:
+            {
+                printf("Client: Receive MESSAGES %s\n", message);
+                break;
+            }
+
+            case PARTICIPANTS_ROOM:
+            {
+                printf("Client: Receive PARTICIPANTS_ROOM %s\n", message);
+                break;
+            }
+
+            default:
+            {
+                printf("Warning: receive unknown message type\n");
+            }
+        }
 
     } else if (Is_membership_mess(service_type)) {
         
