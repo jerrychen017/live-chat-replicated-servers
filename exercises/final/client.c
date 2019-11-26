@@ -243,7 +243,11 @@ static void User_command()
             }
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, CONNECT, 0, message);
 
-            // TODO: start timer and check if server responds and connects
+            // start timer and check if server responds and connects
+            sp_time connection_timeout; 
+            connection_timeout.sec = CONNECTION_TIMEOUT_SEC;
+            connection_timeout.usec = CONNECTION_TIMEOUT_USEC; 
+            E_queue(connection_timeout_event, server_index, NULL, connection_timeout);
 
             break;
         }
@@ -489,6 +493,7 @@ static void Read_message()
                         // client itself joins server-client group
                     } else {
                         // server joins server-client group
+                        E_dequeue(connection_timeout_event, server_index, NULL); 
                         int temp_server_index = 0;
                         ret = sscanf(memb_info.changed_member, "#server%d#ugrad%*d", &temp_server_index);
                         if (ret < 1 || temp_server_index != server_index) {
@@ -622,4 +627,14 @@ static void Bye()
         SP_disconnect(Mbox);
     }
 	exit(0);
+}
+
+void connection_timeout_event(int code, void * data) { 
+     // Leave current server-room group
+    int ret = SP_leave(Mbox, server_client_group);
+    if (ret < 0) {
+        SP_error( ret );
+    }
+    printf("Client: server%d did not respond after timeout\n", code);
+    connected = false; 
 }

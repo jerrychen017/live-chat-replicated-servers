@@ -15,4 +15,6 @@ struct participant {
     struct participant* next;
 };
 
+void connection_timeout_event(int code, void * data);
+
 #endif
