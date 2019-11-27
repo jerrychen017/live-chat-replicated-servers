@@ -16,5 +16,6 @@
 #define PARTICIPANTS_SERVER 5
 #define MATRIX 6
 #define UPDATE_CLIENT 7 
+#define UPDATE_NORMAL 8 
 
 #endif
