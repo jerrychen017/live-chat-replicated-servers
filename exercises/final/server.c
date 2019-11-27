@@ -13,11 +13,15 @@ static char Spread_name[80] = PORT;
 static char Private_group[MAX_GROUP_NAME];
 static mailbox Mbox;
 static int To_exit = 0;
-static bool merging; 
 
 static char public_group[80];
 static const char servers_group[80] = "servers";
 static char server_room_group[80 + 8];
+
+static bool merging;
+static bool connected_servers[5];
+
+static int my_server_index;
 
 static char username[80];
 static int ugrad_index;
@@ -26,6 +30,7 @@ static char client_name[MAX_GROUP_NAME];
 
 static struct room *rooms;
 
+static int matrix[5][5];
 /*static FILE *state_fd;
 static FILE *log1_fd;
 static FILE *log2_fd;
@@ -33,8 +38,6 @@ static FILE *log3_fd;
 static FILE *log4_fd;
 static FILE *log5_fd;*/
 
-static int my_server_index;
-//static int matrix[5][5];
 
 static void Read_message();
 static void Bye();
@@ -45,6 +48,11 @@ int main(int argc, char *argv[])
 {
     rooms = NULL;
     merging = false;
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            matrix[i][j] = 0;
+        }
+    }
 
     int	ret;
 
@@ -295,6 +303,52 @@ static void Read_message()
 
                 break;
             }
+
+            case PARTICIPANTS_SERVER:
+            {
+                printf("Receive PARTICIPANTS_SERVER %s\n", message);
+                // message = <room_name> <server_index> <client1> <client2> \n...
+                // room1 3 client1-> 7
+                int server_index;
+                int num_read;
+                ret = sscanf(message, "%s %d%n", room_name, &server_index, &num_read);
+                if (ret < 2) {
+                    printf("Error: cannot parse room name and server index from PARTICIPANTS_SERVER message %s\n", message);
+                    break;
+                }
+
+                // Create the room if it does exist in the rooms list
+                struct room* room = find_room(rooms, room_name);
+                if (room == NULL) {
+                    room = create_room(&rooms, room_name);
+                }
+
+                // Clear participants[server_index] list in this room
+                clear_client(room, server_index);
+
+                // Construct participants[server_index] list
+                client_name[0] = '\0';
+                for (i = num_read + 1; i < strlen(message); i++) {
+                    if (message[i] != ' ') {
+                        client_name[strlen(client_name) + 1] = '\0';
+                        client_name[strlen(client_name)] = message[i];
+                    } else {
+                        ret = add_client(room, client_name, server_index);
+                        if (ret < 0) {
+                            printf("Error: fail to add client %s to room%s\n", client_name, room_name);
+                        }
+                        client_name[0] = '\0';
+                    }
+                }
+
+                break;
+            }
+
+            case MATRIX:
+            {
+                printf("Receive MATRIX %s\n", message);
+                break;
+            }
             
             default:
             {
@@ -352,6 +406,86 @@ static void Read_message()
                         SP_error( ret );
                     }
                 }
+
+            // Membership change in servers group
+            } else if (strcmp(sender, "servers") == 0) {
+
+                merging = true;
+
+                // Find servers in the current network component
+                num_vs_sets = SP_get_vs_sets_info( message, &vssets[0], MAX_VSSETS, &my_vsset_index );
+                if (num_vs_sets < 0) {
+                    printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
+                    SP_error( num_vs_sets );
+                    exit(1);
+                }
+                
+                for (int i = 0; i < 5; i++) {
+                    connected_servers[i] = false;
+                }
+                int server_index;
+                for (i = 0; i < num_vs_sets; i++) {
+                    ret = SP_get_vs_set_members(message, &vssets[i], members, MAX_MEMBERS);
+                    if (ret < 0) {
+                        printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
+                        SP_error(ret);
+                        exit(1);
+                    }
+                    for (j = 0; j < vssets[i].num_members; j++) {
+                        ret = sscanf(members[j], "#server%d#ugrad%*d", &server_index);
+                        if (ret < 1) {
+                            printf("Error: cannot parse server index from %s\n", members[j]);
+                        } else {
+                            connected_servers[server_index - 1] = true;
+                        }
+                    }
+			    }
+
+                struct room* cur = rooms;
+                while (cur != NULL) {
+                    // Clear participants[server_index] for servers not in the current network component
+                    for (int i = 0; i < 5; i++) {
+                        if (!connected_servers[i]) {
+                            clear_client(cur, i + 1);
+                        }
+                    }
+
+                    // Send participants[my_server_index] to the servers group
+                    struct participant* client_cur = cur->participants[my_server_index - 1];
+                    char clients[MAX_MESS_LEN - 86];
+                    clients[0] = '\0';
+                    while (client_cur != NULL) {
+                        strcat(clients, client_cur->name);
+                        strcat(clients, " ");
+                        client_cur = client_cur->next;
+                    }
+
+                    // Construct "PARTICIPANTS_SERVER <room_name> <server_index> <client1> <client2> ..."
+                    sprintf(to_send, "%s %d %s", cur->name, my_server_index, clients);
+                    ret = SP_multicast(Mbox, AGREED_MESS, servers_group, PARTICIPANTS_SERVER, strlen(to_send), to_send);
+                    if (ret < 0) {
+				        SP_error( ret );
+				        Bye();
+			        }
+                    cur = cur->next;
+                }
+
+                // Send “MATRIX <my_server_index> <25 integers>” to servers group
+                to_send[0] = '\0';
+                char temp[10];
+                for (int i = 0; i < 5; i++) {
+                    for (int j = 0;j < 5; j++) {
+                        sprintf(temp, "%d", matrix[i][j]);
+                        strcat(to_send, temp);
+                        strcat(to_send, " ");
+                    }
+                }
+
+                ret = SP_multicast(Mbox, AGREED_MESS, servers_group, MATRIX, strlen(to_send), to_send);
+                if (ret < 0) {
+			        SP_error( ret );
+			        Bye();
+		        }
             }
 
 
@@ -471,10 +605,21 @@ bool find_client(struct participant* list, char* client_name)
     return false;
 }
 
+void clear_client(struct room* room, int server_index)
+{
+    struct participant* list = room->participants[server_index - 1];
+    while (list != NULL) {
+        struct participant* to_delete = list;
+        list = list->next;
+        free(to_delete);
+    }
+    room->participants[server_index - 1] = NULL;
+}
+
 int add_client(struct room* room, char* client_name, int server_index)
 {
     if (room == NULL) {
-        return 0;
+        return -1;
     }
 
     struct participant* new_participant = malloc(sizeof(struct participant));
