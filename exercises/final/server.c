@@ -139,8 +139,6 @@ int main(int argc, char *argv[])
     
     */
     
-    // TODO: initialize matrix
-
     E_init();
     E_attach_fd(Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY);
     E_handle_events();
