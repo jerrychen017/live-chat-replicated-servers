@@ -20,6 +20,7 @@ static char server_room_group[80 + 8];
 
 static bool merging;
 static bool connected_servers[5];
+static int num_matrices;
 
 static int my_server_index;
 
@@ -53,6 +54,7 @@ int main(int argc, char *argv[])
             matrix[i][j] = 0;
         }
     }
+    num_matrices = 0;
 
     int	ret;
 
@@ -306,16 +308,21 @@ static void Read_message()
 
             case PARTICIPANTS_SERVER:
             {
-                printf("Receive PARTICIPANTS_SERVER %s\n", message);
                 // message = <room_name> <server_index> <client1> <client2> \n...
-                // room1 3 client1-> 7
                 int server_index;
                 int num_read;
                 ret = sscanf(message, "%s %d%n", room_name, &server_index, &num_read);
                 if (ret < 2) {
-                    printf("Error: cannot parse room name and server index from PARTICIPANTS_SERVER message %s\n", message);
+                    printf("Error: cannot parse room name and server index from PARTICIPANTS_SERVER %s\n", message);
                     break;
                 }
+                
+                // Ignore the message sent by the server itself
+                if (server_index == my_server_index) {
+                    break;
+                }
+
+                printf("Server: server%d has clients in %s\n", server_index, room_name);
 
                 // Create the room if it does exist in the rooms list
                 struct room* room = find_room(rooms, room_name);
@@ -337,6 +344,7 @@ static void Read_message()
                         if (ret < 0) {
                             printf("Error: fail to add client %s to room%s\n", client_name, room_name);
                         }
+                        printf("\t%s\n", client_name);
                         client_name[0] = '\0';
                     }
                 }
@@ -346,7 +354,82 @@ static void Read_message()
 
             case MATRIX:
             {
-                printf("Receive MATRIX %s\n", message);
+                printf("Receive MATRIX from server %s\n", sender);
+                // message = <25 integers>
+
+                if (!merging) {
+                    printf("Warning: receive MATRIX not in merging state\n");
+                }
+                
+                num_matrices--;
+                if (num_matrices < 0) {
+                    printf("Error: number of matrices received is larger than expected\n");
+                }
+
+                // Parse 25 integers
+                int received_matrix[5][5];
+                char temp[10];
+                temp[0] = '\0';
+                int counter = 0;
+                int temp_int;
+                for (int i = 0; i < strlen(message); i++) {
+                    if (message[i] != ' ') {
+                        temp[strlen(temp) + 1] = '\0';
+                        temp[strlen(temp)] = message[i];
+                    } else {
+                        ret = sscanf(temp, "%d", &temp_int);
+                        if (ret < 1) {
+                            printf("Error: cannot parse integer from %s\n in MATRIX %s\n", temp, message);
+                        }
+                        received_matrix[counter / 5][counter % 5] = temp_int;
+                        counter++;
+                        temp[0] = '\0';
+                    }
+                }
+                if (counter != 25) {
+                    printf("Error: did not receive 25 integers in MATRIX %s\n", message);
+                }
+
+                // Adopt all integers if it is higher, except for line matrix[my_server_index]
+                for (int i = 0; i < 5; i++) {
+                    // skip line with my server index
+                    if (i + 1 == my_server_index) {
+                        continue;
+                    }
+                    for (int j = 0; j < 5; j++) {
+                        if (received_matrix[i][j] > matrix[i][j]) {
+                            matrix[i][j] = received_matrix[i][j];
+                        }
+                    }
+                }
+
+                // If just received expected number of matrices
+                if (num_matrices == 0) {
+                    
+                    // TODO: Clear liked_updates list
+
+                    // Send new participant list to my server-room group, if I have clients in this room
+                    struct room* cur = rooms;
+                    while (cur != NULL) {
+                        if (cur->participants[my_server_index - 1] != NULL) {
+                            get_participants(to_send, cur);
+                            sprintf(server_room_group, "server%d-%s", my_server_index, cur->name);
+                            ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
+                            if (ret < 0) {
+				                SP_error( ret );
+				                Bye();
+			                }
+                        }
+                        cur = cur->next;
+                    }
+
+                    // TODO: reconcile on logs
+
+                    // TODO: If there is no updates to merge
+                    merging = false;
+                    printf("Server: Finish merging\n");
+
+                }
                 break;
             }
             
@@ -410,36 +493,28 @@ static void Read_message()
             // Membership change in servers group
             } else if (strcmp(sender, "servers") == 0) {
 
+                printf("Server: network changes. Start merging.\n");
+
                 merging = true;
 
-                // Find servers in the current network component
-                num_vs_sets = SP_get_vs_sets_info( message, &vssets[0], MAX_VSSETS, &my_vsset_index );
-                if (num_vs_sets < 0) {
-                    printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
-                    SP_error( num_vs_sets );
-                    exit(1);
-                }
                 
+                // Find servers in the current network component
                 for (int i = 0; i < 5; i++) {
                     connected_servers[i] = false;
                 }
+
+                printf("Server: current network component has\n");
+
                 int server_index;
-                for (i = 0; i < num_vs_sets; i++) {
-                    ret = SP_get_vs_set_members(message, &vssets[i], members, MAX_MEMBERS);
-                    if (ret < 0) {
-                        printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
-                        SP_error(ret);
-                        exit(1);
+                for( i=0; i < num_groups; i++ ) {
+                    printf("\t%s\n", &target_groups[i][0]);
+                    ret = sscanf(&target_groups[i][0], "#server%d#ugrad%*d", &server_index);
+                    if (ret < 1) {
+                        printf("Error: cannot parse server index from %s\n", &target_groups[i][0]);
+                    } else {
+                        connected_servers[server_index - 1] = true;
                     }
-                    for (j = 0; j < vssets[i].num_members; j++) {
-                        ret = sscanf(members[j], "#server%d#ugrad%*d", &server_index);
-                        if (ret < 1) {
-                            printf("Error: cannot parse server index from %s\n", members[j]);
-                        } else {
-                            connected_servers[server_index - 1] = true;
-                        }
-                    }
-			    }
+                }
 
                 struct room* cur = rooms;
                 while (cur != NULL) {
@@ -470,7 +545,7 @@ static void Read_message()
                     cur = cur->next;
                 }
 
-                // Send “MATRIX <my_server_index> <25 integers>” to servers group
+                // Send “MATRIX <25 integers>” to servers group
                 to_send[0] = '\0';
                 char temp[10];
                 for (int i = 0; i < 5; i++) {
@@ -486,6 +561,15 @@ static void Read_message()
 			        SP_error( ret );
 			        Bye();
 		        }
+
+                // Calculate how many matrices expected to receive
+                
+                num_matrices = 0;
+                for (int i = 0; i < 5; i++) {
+                    if (connected_servers[i]) {
+                        num_matrices++;
+                    }
+                }
             }
 
 

@@ -593,6 +593,12 @@ static void Read_message()
 }
 
 static void Display() {
+
+    // Do not display if participants is empty. Waiting for server's message
+    if (participants == NULL) {
+        return;
+    }
+
     printf("Room: %s\n", room_name);
     printf("Current participants: ");
     struct participant* cur = participants;
