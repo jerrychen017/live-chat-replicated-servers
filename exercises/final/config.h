@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define PORT "10100"
+#define PORT "10030"
 #define MAX_MESS_LEN 102400
 #define MAX_VSSETS      10
 #define MAX_MEMBERS     100
@@ -15,5 +15,6 @@
 #define PARTICIPANTS_ROOM 4
 #define PARTICIPANTS_SERVER 5
 #define MATRIX 6
+#define UPDATE_CLIENT 7 
 
 #endif

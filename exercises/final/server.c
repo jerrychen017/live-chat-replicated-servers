@@ -430,6 +430,11 @@ static void Read_message()
                 }
                 break;
             }
+
+            case UPDATE_CLIENT: 
+            {
+                break; 
+            }
             
             default:
             {

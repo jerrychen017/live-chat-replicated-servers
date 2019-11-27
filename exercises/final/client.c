@@ -82,6 +82,8 @@ static void User_command()
 {
     char	command[130];
 	char	message[MAX_MESS_LEN];
+    char    append_mess[80]; // message sent by the client using 'a'
+    unsigned int append_mess_len; //  length of append_mess
 	int	ret;
 	int	i;
 
@@ -304,6 +306,41 @@ static void User_command()
             // Send “JOIN <room_name>” message to the server’s public group
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, JOIN, strlen(room_name), room_name);
             printf("request to join room %s\n", room_name);
+
+            break;
+        }
+
+        case 'a': 
+        {
+
+            if (!logged_in) {
+                printf("Client: did not login using command 'u'\n");
+                break;
+            }
+
+            if (!connected) {
+                printf("Client: did not connect with server using command 'c'\n");
+                break;
+            }
+
+            if (!joined) {
+                printf("Client: did not join a room using command 'a'\n");
+                break; 
+            }
+
+            printf("Please enter message: ");
+            if (fgets(append_mess, 80, stdin) == NULL) {
+                printf("Error: cannot get message from stdin.");
+                Bye();
+            }
+            append_mess_len = strlen(append_mess);
+            char append_to_send[300]; 
+            // Send “UPDATE_CLIENT a <room_name> <username> <content>” to the server’s public group
+            sprintf(append_to_send, "a %s %s %s", room_name, username, append_mess);
+            ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, sizeof(append_to_send), append_to_send);
+            if (ret < 0) {
+                SP_error( ret );
+            }
 
             break;
         }
