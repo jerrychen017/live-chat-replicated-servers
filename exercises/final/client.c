@@ -329,16 +329,17 @@ static void User_command()
                 break; 
             }
 
-            printf("Please enter message: ");
-            if (fgets(content, 81, stdin) == NULL) {
-                printf("Error: cannot get message from stdin.");
-                Bye();
-            }
-
-            if (strlen(content) == 0 || (strlen(content) == 1 && content[0] == '\n')) {
+            if (strlen(&command[2]) == 0 || (strlen(&command[2]) == 1 && content[2] == '\n')) {
                 printf("Client: message cannot be empty");
                 break;
             }
+
+            if (strlen(&command[2]) > 81) {
+                printf("Client: maximum number of characters in a line is 80\n");
+                break;
+            }
+
+            strcpy(content, &command[2]);
 
             // Remove new line from message
             if (content[strlen(content)-1] == '\n') {
@@ -351,8 +352,6 @@ static void User_command()
             if (ret < 0) {
                 SP_error(ret);
             }
-
-            // TODO: werid behavior when enter 80 characters
 
             break;
         }

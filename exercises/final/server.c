@@ -113,7 +113,6 @@ int main(int argc, char *argv[])
     state_fd = fopen(state_filename, "a+");*/
     for (int i = 0; i < 5; i++) {
         sprintf(log_file_names[i], "server%d-log%d.out", my_server_index, i + 1);
-        log_fd[i] = fopen(log_file_names[i], "a+");
     }
     for (int i = 0; i < 5; i++) {
         logs[i] = NULL;
@@ -486,7 +485,13 @@ static void Read_message()
                 strcpy(update, &message[num_read + 1]);
 
                 // Write update to “server[my_server_index]-log[server_index].out” file
-                fprintf(log_fd[server_index - 1], "%d %s\n", timestamp, update);
+                log_fd[server_index - 1] = fopen(log_file_names[server_index - 1], "a+");
+                ret = fprintf(log_fd[server_index - 1], "%d %s\n", timestamp, update);
+                if (ret < 0) {
+                    printf("Error: fail to write update %s to file %s\n", update, log_file_names[server_index - 1]);
+                    break;
+                }
+                fclose(log_fd[server_index - 1]);
 
                 // Append it in logs[server_index] list
                 struct log* new_log = malloc(sizeof(struct log));
