@@ -29,7 +29,7 @@ static struct participant* participants;
 static struct participant* last_participant;
 static struct message* messages;
 static struct message* last_message;
-int num_messages;
+static int num_messages;
 
 static	void	Print_menu();
 static	void	User_command();
@@ -46,6 +46,8 @@ int main(int argc, char *argv[])
     server_client_group[0] = '\0';
 
     participants = NULL;
+    messages = NULL;
+    last_message = NULL;
 
     E_init();
     E_attach_fd( 0, READ_FD, User_command, 0, NULL, LOW_PRIORITY );
@@ -82,9 +84,7 @@ static void User_command()
 {
     char	command[130];
 	char	message[MAX_MESS_LEN];
-    char    content[80]; // message sent by the client using 'a'
-    // unsigned int append_mess_len; //  length of append_mess
-    char content_to_send[300]; 
+    char    content[81]; // message sent by the client using 'a'
 	int	ret;
 	int	i;
 
@@ -105,10 +105,10 @@ static void User_command()
 				break;
 			}
 
-            // username cannot contain hashtag and space
+            // username cannot contain hashtag or hyphen
             for (i = 0; i < strlen(username); i++) {
                 if (username[i] == '#' || username[i] == '-') {
-                    printf(" invalid username, cannot contain hashtag, space \n");
+                    printf(" invalid username, cannot contain hashtag or hyphen \n");
 				    break;
                 }
             }
@@ -263,7 +263,7 @@ static void User_command()
 				break;
 			}
 
-            // room_name cannot contain hashtag and hyphen
+            // room_name cannot contain hashtag or hyphen
             for (i = 0; i < strlen(room_name); i++) {
                 if (room_name[i] == '#' || room_name[i] == '-') {
                     printf(" invalid room name, cannot contain hashtag or hyphen \n");
@@ -325,22 +325,34 @@ static void User_command()
             }
 
             if (!joined) {
-                printf("Client: did not join a room using command 'a'\n");
+                printf("Client: did not join a room using command 'j'\n");
                 break; 
             }
 
             printf("Please enter message: ");
-            if (fgets(content, 80, stdin) == NULL) {
+            if (fgets(content, 81, stdin) == NULL) {
                 printf("Error: cannot get message from stdin.");
                 Bye();
             }
 
-            // Send “UPDATE_CLIENT a <room_name> <username> <content>” to the server’s public group
-            sprintf(content_to_send, "a %s %s %s", room_name, username, content);
-            ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, sizeof(content_to_send), content_to_send);
-            if (ret < 0) {
-                SP_error( ret );
+            if (strlen(content) == 0 || (strlen(content) == 1 && content[0] == '\n')) {
+                printf("Client: message cannot be empty");
+                break;
             }
+
+            // Remove new line from message
+            if (content[strlen(content)-1] == '\n') {
+                content[strlen(content)-1] = '\0';
+            }
+
+            // Send “UPDATE_CLIENT a <room_name> <username> <content>” to the server’s public group
+            sprintf(message, "a %s %s %s", room_name, username, content);
+            ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, strlen(message), message);
+            if (ret < 0) {
+                SP_error(ret);
+            }
+
+            // TODO: werid behavior when enter 80 characters
 
             break;
         }

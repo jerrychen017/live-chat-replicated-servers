@@ -21,8 +21,8 @@ static char server_room_group[80 + 8];
 static bool merging;
 static bool connected_servers[5];
 static int num_matrices;
-static struct log * buffer; // pointer to first update 
-static struct log * end_of_buffer; 
+static struct log *buffer; // pointer to first update 
+static struct log *end_of_buffer;
 
 static int my_server_index;
 
@@ -439,10 +439,13 @@ static void Read_message()
             }
 
             case UPDATE_CLIENT: 
-            { // Receives “UPDATE_CLIENT <update>” in the public group
+            {
 
+                // message = <update>
+
+                // If in the middle of merging, put the update in buffer
                 if (merging) { 
-                    struct log * pending_update = malloc(sizeof(struct log)); 
+                    struct log *pending_update = malloc(sizeof(struct log)); 
                     strcpy(pending_update->content, message);
                     pending_update->next = NULL;
                     if (buffer == NULL) {
@@ -457,15 +460,15 @@ static void Read_message()
 
                 // increment lamport timestamp
                 timestamp++;
-                matrix[my_server_index - 1][my_server_index - 1] = timestamp; 
-                char update[300];
-                strcpy(update, message);
 
                 // Send “UPDATE_NORMAL <timestamp> <my_server_index> <update>” to servers group
+                char update[300];
+                strcpy(update, message);
                 sprintf(to_send, "%d %d %s", timestamp, my_server_index, update);
-                ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_NORMAL, sizeof(to_send), to_send);
+                ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_NORMAL, strlen(to_send), to_send);
                 if (ret < 0) {
-                    SP_error( ret );
+                    SP_error(ret);
+                    Bye();
                 }
 
                 break; 
@@ -473,7 +476,7 @@ static void Read_message()
 
             case UPDATE_NORMAL: 
             {
-                printf("MESSAGE: %s\n", message);
+                printf("UPDATE_NORMAL: %s\n", message);
                 break;
             }
             
