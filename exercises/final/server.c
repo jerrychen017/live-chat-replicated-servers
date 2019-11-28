@@ -240,6 +240,7 @@ static void Read_message()
                 struct room* new_room = find_room(rooms, room_name);
                 get_messages(to_send, new_room);
                 ret = SP_multicast(Mbox, AGREED_MESS, sender, MESSAGES, strlen(to_send), to_send);
+                printf("Server: send to client %s latest 25 messages of room %s\n MESSAGES %s\n", sender, room_name, to_send);
                 if (ret < 0) {
 				    SP_error( ret );
 				    Bye();
@@ -539,8 +540,8 @@ static void Read_message()
                         break;
                     }
 
-                    // Send “APPEND <username> <content>” to the server-room group
-                    sprintf(to_send, "%s %s", new_message->creator, new_message->content);
+                    // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
+                    sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
                     sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
                     ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
                     if (ret < 0) {
@@ -897,11 +898,9 @@ int insert_message(struct room* room, struct message* message)
     struct message dummy;
     dummy.next = room->messages;
     struct message *cur = &dummy;
-    // 1 3
-    // 2 2 -> 2 3 -> 5 1
     while (cur->next != NULL) {
-        if ((cur->next->server_index > message->server_index) 
-            || (cur->next->server_index == message->server_index && cur->next->timestamp > message->timestamp)) {
+        if ((cur->next->timestamp > message->timestamp) 
+            || (cur->next->timestamp == message->timestamp && cur->next->server_index > message->server_index)) {
             
             // insert at current position
             message->next = cur->next;
@@ -919,7 +918,6 @@ int insert_message(struct room* room, struct message* message)
     room->messages = dummy.next;
 
     return 0;
-
 }
 
 

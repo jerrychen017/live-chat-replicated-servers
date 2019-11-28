@@ -415,6 +415,7 @@ static void Read_message()
         switch (mess_type) {
             case MESSAGES:
             {
+                printf("Receive MESSAGES %s\n", message);
                 // clear messages list
                 while (messages != NULL) {
                     struct message* to_delete = messages;
@@ -423,21 +424,21 @@ static void Read_message()
                 }
                 num_messages = 0;
 
-                char message[200];
-                message[0] = '\0';
+                char temp[200];
+                temp[0] = '\0';
                 int timestamp;
                 int message_server_index;
                 char creator[80];
                 int num_likes;
                 char content[80];
                 for (i = 0; i < strlen(message); i++) {
-                    message[strlen(message) + 1] = '\0';
-                    message[strlen(message)] = message[i];
+                    temp[strlen(temp) + 1] = '\0';
+                    temp[strlen(temp)] = message[i];
 
                     if (message[i] == '\n') {
                         // append a message
                         // Each message: <timestamp> <server_index> <creator> <num_likes> <content>
-                        ret = sscanf(message, "%d %d %s %d %[^\n]\n", &timestamp, &message_server_index, creator, &num_likes, content);
+                        ret = sscanf(temp, "%d %d %s %d %[^\n]\n", &timestamp, &message_server_index, creator, &num_likes, content);
                         if (ret < 5) {
                             printf("Error: cannot parse message from MESSAAGES line %s\n", message);
                             continue;
@@ -460,7 +461,7 @@ static void Read_message()
 
                         num_messages++;
 
-                        message[0] = '\0';
+                        temp[0] = '\0';
                     }
                 }
 
@@ -513,6 +514,46 @@ static void Read_message()
             case APPEND:
             {
                 printf("Receive APPEND %s\n", message);
+                // message = <timestamp> <server_index> <username> <content>
+
+                int timestamp;
+                int message_server_index;
+                char creator[80];
+                int num_read;
+                ret = sscanf(message, "%d %d %s%n", &timestamp, &message_server_index, creator, &num_read);
+                if (ret < 3) {
+                    printf("Error: cannot parse timestamp, server_index and username from APPEND %s\n", message);
+                    break;
+                }
+
+                struct message* new_message = malloc(sizeof(struct message));
+                new_message->timestamp = timestamp;
+                new_message->server_index = message_server_index;
+                strcpy(new_message->creator, creator);
+                strcpy(new_message->content, &message[num_read + 1]);
+                new_message->num_likes = 0;
+                new_message->next = NULL;
+
+                if (num_messages == 25) {
+                    // Remove first message
+                    struct message *to_delete = messages;
+                    messages = to_delete->next;
+                    free(to_delete);
+                    num_messages--;
+                }
+
+                // Append new message to list
+                if (messages == NULL) {
+                    messages = new_message;
+                    last_message = new_message;
+                } else {
+                    last_message->next = new_message;
+                    last_message = new_message;
+                }
+                num_messages++;
+
+                Display();
+
                 break;
             }
 
@@ -666,8 +707,9 @@ static void Display() {
     struct message* message_cur = messages;
     while (message_cur != NULL) {
         printf("%d. %s: %-*sLikes: %d\n",
-            line, message_cur->creator, 30, message_cur->content, message_cur->num_likes);
+            line, message_cur->creator, 40, message_cur->content, message_cur->num_likes);
         message_cur = message_cur->next;
+        line++;
     }
 }
 
