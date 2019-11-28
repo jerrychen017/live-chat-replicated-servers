@@ -511,6 +511,12 @@ static void Read_message()
                 break;
             }
 
+            case APPEND:
+            {
+                printf("Receive APPEND %s\n", message);
+                break;
+            }
+
             default:
             {
                 printf("Warning: receive unknown message type\n");

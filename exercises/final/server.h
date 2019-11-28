@@ -16,7 +16,7 @@ struct participant {
 struct message {
     int timestamp;
     int server_index;
-    char content[80];
+    char content[81];
     char creator[80];
     struct participant* liked_by;   // username, instead of client name
     struct message* next;
@@ -35,6 +35,7 @@ bool find_client(struct participant* list, char* client_name);
 void clear_client(struct room* room, int server_index);
 int add_client(struct room* room, char* client_name, int server_index);
 int remove_client(struct room* room, char* client_name, int server_index);
+int insert_message(struct room* room, struct message* message);
 void get_messages(char* to_send, struct room* room);
 void get_participants(char* to_send, struct room* room);
 

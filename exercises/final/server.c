@@ -21,8 +21,6 @@ static char server_room_group[80 + 8];
 static bool merging;
 static bool connected_servers[5];
 static int num_matrices;
-static struct log *buffer; // pointer to first update 
-static struct log *end_of_buffer;
 
 static int my_server_index;
 
@@ -34,14 +32,15 @@ static char client_name[MAX_GROUP_NAME];
 static struct room *rooms;
 
 static int matrix[5][5];
-static int timestamp; 
-/*static FILE *state_fd;
-static FILE *log1_fd;
-static FILE *log2_fd;
-static FILE *log3_fd;
-static FILE *log4_fd;
-static FILE *log5_fd;*/
+static int my_timestamp; 
 
+static char log_file_names[5][30];
+static FILE *log_fd[5];
+static struct log *logs[5];
+static struct log *last_log[5];
+static struct log *buffer; 
+static struct log *end_of_buffer;
+//static FILE *state_fd;
 
 static void Read_message();
 static void Bye();
@@ -61,7 +60,7 @@ int main(int argc, char *argv[])
 
     buffer = NULL; 
     end_of_buffer = NULL; 
-    timestamp = 0;
+    my_timestamp = 0;
 
     int	ret;
 
@@ -111,28 +110,23 @@ int main(int argc, char *argv[])
     // open state and log files in appending and reading mode
     /*char state_filename[20];
     sprintf(state_filename, "server%d-state.out", my_server_index);
-    state_fd = fopen(state_filename, "a+");
-    char log1_filename[20];
-    sprintf(log1_filename, "server%d-log1.out", my_server_index);
-    log1_fd = fopen(log1_filename, "a+");
-    char log2_filename[20];
-    sprintf(log2_filename, "server%d-log2.out", my_server_index);
-    log2_fd = fopen(log2_filename, "a+");
-    char log3_filename[20];
-    sprintf(log3_filename, "server%d-log3.out", my_server_index);
-    log3_fd = fopen(log3_filename, "a+");
-    char log4_filename[20];
-    sprintf(log4_filename, "server%d-log4.out", my_server_index);
-    log4_fd = fopen(log4_filename, "a+");
-    char log5_filename[20];
-    sprintf(log5_filename, "server%d-log5.out", my_server_index);
-    log5_fd = fopen(log5_filename, "a+");*/
+    state_fd = fopen(state_filename, "a+");*/
+    for (int i = 0; i < 5; i++) {
+        sprintf(log_file_names[i], "server%d-log%d.out", my_server_index, i + 1);
+        log_fd[i] = fopen(log_file_names[i], "a+");
+    }
+    for (int i = 0; i < 5; i++) {
+        logs[i] = NULL;
+    }
+    for (int i = 0; i < 5; i++) {
+        last_log[i] = NULL;
+    }
 
     /* TODO:
     if there is state file
         Reconstruct data structures from state file; retrieve 5 lamport timestamps
     else
-        initialize empty data structures, timestamp = 0 
+        initialize empty data structures, my_timestamp = 0 
 
     for every server
         if log file exists
@@ -440,7 +434,6 @@ static void Read_message()
 
             case UPDATE_CLIENT: 
             {
-
                 // message = <update>
 
                 // If in the middle of merging, put the update in buffer
@@ -459,12 +452,12 @@ static void Read_message()
                 }
 
                 // increment lamport timestamp
-                timestamp++;
+                my_timestamp++;
 
                 // Send “UPDATE_NORMAL <timestamp> <my_server_index> <update>” to servers group
                 char update[300];
                 strcpy(update, message);
-                sprintf(to_send, "%d %d %s", timestamp, my_server_index, update);
+                sprintf(to_send, "%d %d %s", my_timestamp, my_server_index, update);
                 ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_NORMAL, strlen(to_send), to_send);
                 if (ret < 0) {
                     SP_error(ret);
@@ -476,7 +469,96 @@ static void Read_message()
 
             case UPDATE_NORMAL: 
             {
-                printf("UPDATE_NORMAL: %s\n", message);
+                printf("Receive UPDATE_NORMAL %s\n", message);
+                // message = <timestamp> <server_index> <update>
+
+                int timestamp;
+                int server_index;
+                char update[300];
+                int num_read;
+
+                ret = sscanf(message, "%d %d%n", &timestamp, &server_index, &num_read);
+                if (ret < 2) {
+                    printf("Error: cannot parse timestamp and server_index from UPDATE_NORMAL %s\n", message);
+                    break;
+                }
+
+                strcpy(update, &message[num_read + 1]);
+
+                // Write update to “server[my_server_index]-log[server_index].out” file
+                fprintf(log_fd[server_index - 1], "%d %s\n", timestamp, update);
+
+                // Append it in logs[server_index] list
+                struct log* new_log = malloc(sizeof(struct log));
+                new_log->timestamp = timestamp;
+                strcpy(new_log->content, update);
+                new_log->next = NULL;
+
+                if (logs[server_index - 1] == NULL) {
+                    logs[server_index - 1] = new_log;
+                    last_log[server_index - 1] = new_log;
+                } else {
+                    last_log[server_index - 1]->next = new_log;
+                    last_log[server_index - 1] = new_log;
+                }
+
+                // Adopt the lamport timestamp if it is higher
+                if (timestamp > my_timestamp) {
+                    my_timestamp = timestamp;
+                }
+
+                // Update matrix[my_server_index][server_index] to the new timestamp
+                matrix[my_server_index - 1][server_index - 1] = timestamp;
+
+                // If update is “a <room_name> <username> <content>”
+                if (update[0] == 'a') {
+
+                    ret = sscanf(update, "a %s %s%n", room_name, username, &num_read);
+                    if (ret < 2) {
+                        printf("Error: cannot parse room_name and username from UPDATE_NORMAL %s\n", message);
+                    }
+
+                    // Insert message to messages list of the room, in the order of timestamp+server_index
+                    struct message *new_message = malloc(sizeof(struct message));
+                    new_message->timestamp = timestamp;
+                    new_message->server_index = server_index;
+                    strcpy(new_message->content, &update[num_read + 1]);
+                    strcpy(new_message->creator, username);
+                    new_message->liked_by = NULL;
+                    new_message->next = NULL;
+
+                    struct room* room = find_room(rooms, room_name);
+                    ret = insert_message(room, new_message);
+                    if (ret < 0) {
+                        printf("Error: fail to append message. %s does not exist\n", room_name);
+                        break;
+                    }
+
+                    // Send “APPEND <username> <content>” to the server-room group
+                    sprintf(to_send, "%s %s", new_message->creator, new_message->content);
+                    sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
+                    ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
+                    if (ret < 0) {
+                        SP_error(ret);
+                        Bye();
+                    }
+
+
+                // TODO: If update is “l/r <room_name> <timestamp of the liked message> <server_index of the liked message> <username>”
+                } else if (update[0] == 'l') {
+
+                } else if (update[0] == 'r') {
+
+                } else {
+                    printf("Error: unknown command in UPDATE_NORMAL %s\n", message);
+                    break;
+                }
+
+                /* TODO:
+                For every FREQ_SAVE UPDATE_NORMAL messages received
+                    Save state to state file
+                */
+
                 break;
             }
             
@@ -796,6 +878,45 @@ int remove_client(struct room* room, char* client_name, int server_index)
     }
     return -1;
 }
+
+int insert_message(struct room* room, struct message* message)
+{
+    if (room == NULL) {
+        return -1;
+    }
+    if (room->messages == NULL) {
+        room->messages = message;
+        return 0;
+    }
+
+    struct message dummy;
+    dummy.next = room->messages;
+    struct message *cur = &dummy;
+    // 1 3
+    // 2 2 -> 2 3 -> 5 1
+    while (cur->next != NULL) {
+        if ((cur->next->server_index > message->server_index) 
+            || (cur->next->server_index == message->server_index && cur->next->timestamp > message->timestamp)) {
+            
+            // insert at current position
+            message->next = cur->next;
+            cur->next = message;
+            room->messages = dummy.next;
+
+            return 0;
+        }
+        cur = cur->next;
+    }
+
+    // insert at last position
+    message->next = cur->next;
+    cur->next = message;
+    room->messages = dummy.next;
+
+    return 0;
+
+}
+
 
 void get_messages(char* to_send, struct room* room) {
     if (room == NULL || room->messages == NULL) {
