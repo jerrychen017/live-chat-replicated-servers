@@ -650,7 +650,7 @@ static void Read_message()
                 }
 
                 // Update matrix[my_server_index][server_index] to the new timestamp
-                matrix[my_server_index - 1][server_index - 1] = timestamp;
+                matrix[my_server_index - 1][server_index - 1] = my_timestamp;
 
                 // If update is “a <room_name> <username> <content>”
                 if (update[0] == 'a') {
@@ -702,6 +702,83 @@ static void Read_message()
                 */
 
                 break;
+            }
+
+            case UPDATE_MERGE:
+            {
+                printf("Receive UPDATE_MERGE %s\n", message);
+                // message = <timestamp> <server_index> <update>
+
+                if (!merging) { 
+                    printf("Warning: received UPDATE_MERGE after merging completed.\n");
+                    break;
+                }
+
+                int timestamp;
+                int server_index;
+                char update[300];
+                int num_read;
+
+                ret = sscanf(message, "%d %d%n", &timestamp, &server_index, &num_read);
+                if (ret < 2) {
+                    printf("Error: cannot parse timestamp and server_index from UPDATE_NORMAL %s\n", message);
+                    break;
+                }
+
+                if (update[0] == 'a' && timestamp <= matrix[my_server_index - 1][server_index - 1]) {
+                    printf("Warning: update already exists.\n");
+                    break; 
+                }
+
+                
+                // Write update to “server[my_server_index]-log[server_index].out” file
+                log_fd[server_index - 1] = fopen(log_file_names[server_index - 1], "a+");
+                ret = fprintf(log_fd[server_index - 1], "%d %s\n", timestamp, update);
+                if (ret < 0) {
+                    printf("Error: fail to write update %s to file %s\n", update, log_file_names[server_index - 1]);
+                    break;
+                }
+                fclose(log_fd[server_index - 1]);
+
+                // Append it in logs[server_index] list
+                struct log* new_log = malloc(sizeof(struct log));
+                new_log->timestamp = timestamp;
+                strcpy(new_log->content, update);
+                new_log->next = NULL;
+
+                if (logs[server_index - 1] == NULL) {
+                    logs[server_index - 1] = new_log;
+                    last_log[server_index - 1] = new_log;
+                } else {
+                    last_log[server_index - 1]->next = new_log;
+                    last_log[server_index - 1] = new_log;
+                }
+
+                // Adopt the lamport timestamp if it is higher
+                if (timestamp > my_timestamp) {
+                    my_timestamp = timestamp;
+                }
+
+                // Update matrix[my_server_index][server_index] to the new timestamp
+                matrix[my_server_index - 1][server_index - 1] = my_timestamp;
+
+                ret = sscanf(update, "a %s %s%n", room_name, username, &num_read);
+                if (ret < 2) {
+                    printf("Error: cannot parse room_name and username from UPDATE_NORMAL %s\n", message);
+                }
+
+                if (update[0] == 'a') {
+
+                } else if (update[0] == 'l') {
+                    
+                } else if (update[0] == 'r') {
+
+                } else {
+                    printf("Error: unknown command in UPDATE_MERGE %s\n", message);
+                    break;
+                }
+                
+                break; 
             }
             
             default:
