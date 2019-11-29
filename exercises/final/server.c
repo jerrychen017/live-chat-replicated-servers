@@ -21,6 +21,7 @@ static char server_room_group[80 + 8];
 static bool merging;
 static bool connected_servers[5];
 static int num_matrices;
+static int expected_timestamp[5];
 
 static int my_server_index;
 
@@ -40,7 +41,8 @@ static struct log *logs[5];
 static struct log *last_log[5];
 static struct log *buffer; 
 static struct log *end_of_buffer;
-//static FILE *state_fd;
+static char state_file_name[30];
+static FILE *state_fd;
 
 static void Read_message();
 static void Bye();
@@ -58,6 +60,12 @@ int main(int argc, char *argv[])
     }
     num_matrices = 0;
 
+    for (int i = 0; i < 5; i++) {
+        logs[i] = NULL;
+    }
+    for (int i = 0; i < 5; i++) {
+        last_log[i] = NULL;
+    }
     buffer = NULL; 
     end_of_buffer = NULL; 
     my_timestamp = 0;
@@ -107,36 +115,32 @@ int main(int argc, char *argv[])
     }
     printf("Server: join group %s\n", servers_group);
 
-    // open state and log files in appending and reading mode
-    /*char state_filename[20];
-    sprintf(state_filename, "server%d-state.out", my_server_index);
-    state_fd = fopen(state_filename, "a+");*/
+    // Initialize log file names and state file name
     for (int i = 0; i < 5; i++) {
         sprintf(log_file_names[i], "server%d-log%d.out", my_server_index, i + 1);
     }
-    for (int i = 0; i < 5; i++) {
-        logs[i] = NULL;
-    }
-    for (int i = 0; i < 5; i++) {
-        last_log[i] = NULL;
+    sprintf(state_file_name, "server%d-state.out", my_server_index);
+
+    // If state file exists
+    if (access(state_file_name, F_OK) != -1 ) {
+        printf("Server: Reconstruct data structures from state file\n");
+        // TODO: Reconstruct data structures from state file; retrieve 5 lamport timestamps
     }
 
-    /* TODO:
-    if there is state file
-        Reconstruct data structures from state file; retrieve 5 lamport timestamps
-    else
-        initialize empty data structures, my_timestamp = 0 
-
-    for every server
-        if log file exists
+    for (int i = 0; i < 5; i++) {
+        // If log file exists
+        if (access(log_file_names[i], F_OK) != -1 ) {
+            /*
+            TODO:
             read from the line matching with the corresponding timestamp
             save logs in memory
-        else
-            initialize empty logs[server_index] list
-    
+            */
+        }
+    }
+
+    /* TODO:    
     Execute logs in the order of lamport timestamp + process_index
         update rooms, matrix and timestamp accordingly
-    
     */
     
     E_init();
@@ -240,7 +244,7 @@ static void Read_message()
                 struct room* new_room = find_room(rooms, room_name);
                 get_messages(to_send, new_room);
                 ret = SP_multicast(Mbox, AGREED_MESS, sender, MESSAGES, strlen(to_send), to_send);
-                printf("Server: send to client %s latest 25 messages of room %s\n MESSAGES %s\n", sender, room_name, to_send);
+                printf("Server: send to client %s latest 25 messages of %s\nMESSAGES %s\n", sender, room_name, to_send);
                 if (ret < 0) {
 				    SP_error( ret );
 				    Bye();
@@ -390,12 +394,12 @@ static void Read_message()
                 }
 
                 // Adopt all integers if it is higher, except for line matrix[my_server_index]
-                for (int i = 0; i < 5; i++) {
+                for (i = 0; i < 5; i++) {
                     // skip line with my server index
                     if (i + 1 == my_server_index) {
                         continue;
                     }
-                    for (int j = 0; j < 5; j++) {
+                    for (j = 0; j < 5; j++) {
                         if (received_matrix[i][j] > matrix[i][j]) {
                             matrix[i][j] = received_matrix[i][j];
                         }
@@ -423,8 +427,70 @@ static void Read_message()
                     }
 
                     // TODO: reconcile on logs
+                    for (j = 0; j < 5; j++) {
 
-                    // TODO: If there is no updates to merge
+                        // Clear logs[server_index] list up to the lowest timestamp of all 5 servers
+                        int lowest_timestamp = matrix[0][j];
+                        for (i = 0; i < 5; i++) {
+                            if (matrix[i][j] < lowest_timestamp) {
+                                lowest_timestamp = matrix[i][j];
+                            }
+                        }
+                        ret = clear_log(&logs[i], &last_log[i], lowest_timestamp);
+                        if (ret < 0) {
+                            printf("Error: fail to clear logs[%d] up to timestamp %d\n", i, lowest_timestamp);
+                            break;
+                        }
+
+                        // Get lowest and highest timestamp of all ACTIVE servers for this server
+                        if (!connected_servers[my_server_index - 1]) {
+                            printf("Error: this server%d is not in the current network component\n", my_server_index);
+                            break;
+                        }
+                        int lowest_timestamp = matrix[my_server_index - 1][j];
+                        int highest_timestamp = matrix[my_server_index - 1][j];
+                        int server_index = my_server_index;
+                        for (i = 0; i < 5; i++) {
+                            if (connected_servers[i]) {
+                                if (matrix[i][j] > highest_timestamp) {
+                                    highest_timestamp = matrix[i][j];
+                                    server_index = i + 1;
+                                }
+                                if (matrix[i][j] < lowest_timestamp) {
+                                    lowest_timestamp = matrix[i][j];
+                                }
+                            } 
+                        }
+                        expected_timestamp[j] = highest_timestamp;
+
+                        /* Find the server which has the highest timestamp, and lowest server index
+                            to send missing updates for this server */
+                        for (i = 0; i < 5; i++) {
+                            if (connected_servers[i]) {
+                                if (matrix[i][j] == expected_timestamp[j] && i + 1 < server_index) {
+                                    server_index = i + 1;
+                                }
+                            }
+                        }
+
+                        if (server_index != my_server_index) {
+                            continue;
+                        }
+
+                        // Send logs from lowest to highest timestamp
+                        if (highest_timestamp == 0) {
+                            continue;
+                        }
+
+                        
+                        
+                        
+                        
+                    }
+
+
+
+                    // TODO: If there is no update to merge
                     merging = false;
                     printf("Server: Finish merging\n");
 
@@ -634,7 +700,7 @@ static void Read_message()
 
                 
                 // Find servers in the current network component
-                for (int i = 0; i < 5; i++) {
+                for (i = 0; i < 5; i++) {
                     connected_servers[i] = false;
                 }
 
@@ -654,7 +720,7 @@ static void Read_message()
                 struct room* cur = rooms;
                 while (cur != NULL) {
                     // Clear participants[server_index] for servers not in the current network component
-                    for (int i = 0; i < 5; i++) {
+                    for (i = 0; i < 5; i++) {
                         if (!connected_servers[i]) {
                             clear_client(cur, i + 1);
                         }
@@ -683,8 +749,8 @@ static void Read_message()
                 // Send “MATRIX <25 integers>” to servers group
                 to_send[0] = '\0';
                 char temp[10];
-                for (int i = 0; i < 5; i++) {
-                    for (int j = 0;j < 5; j++) {
+                for (i = 0; i < 5; i++) {
+                    for (j = 0;j < 5; j++) {
                         sprintf(temp, "%d", matrix[i][j]);
                         strcat(to_send, temp);
                         strcat(to_send, " ");
@@ -698,9 +764,8 @@ static void Read_message()
 		        }
 
                 // Calculate how many matrices expected to receive
-                
                 num_matrices = 0;
-                for (int i = 0; i < 5; i++) {
+                for (i = 0; i < 5; i++) {
                     if (connected_servers[i]) {
                         num_matrices++;
                     }
@@ -1016,4 +1081,32 @@ void get_participants(char* to_send, struct room* room)
         free(to_delete);
     }
 
+}
+
+int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
+{
+    if (timestamp == 0) {
+        return 0;
+    }
+
+    if (*logs_ref == NULL || *last_log_ref == NULL) {
+        return -1;
+    }
+
+    struct log *cur = *logs_ref;
+    while (cur != NULL) {
+        if (cur->timestamp <= timestamp) {
+            // delete log at current position
+            struct log *to_delete = cur;
+            cur = cur->next;
+            free(to_delete);
+        }
+    }
+
+    *logs_ref = cur;
+    if (cur == NULL) {
+        *last_log_ref = NULL;
+    }
+
+    return 0;
 }

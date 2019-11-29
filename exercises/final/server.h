@@ -38,5 +38,6 @@ int remove_client(struct room* room, char* client_name, int server_index);
 int insert_message(struct room* room, struct message* message);
 void get_messages(char* to_send, struct room* room);
 void get_participants(char* to_send, struct room* room);
+int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp);
 
 #endif
