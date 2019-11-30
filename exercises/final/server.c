@@ -511,10 +511,9 @@ static void Read_message()
                 }
                 if (merge_completed) {
                     merging = false; 
-                    printf("Serve: Finished merging\n");
+                    printf("Server: Finished merging\n");
 
                     int num_read; 
-
                     while (buffer != NULL) {
                         char command = buffer->content[0];
                         if (command == 'a') {
@@ -557,6 +556,10 @@ static void Read_message()
                             printf("Error: unknown command in UPDATE_NORMAL %s\n", message);
                             break;
                         }
+
+                    struct log * cur_ptr_copy = buffer; 
+                    buffer = buffer->next; 
+                    free(cur_ptr_copy); 
                         
                     } // end of while loop
                     buffer = NULL; 
@@ -750,8 +753,11 @@ static void Read_message()
                     logs[server_index - 1] = new_log;
                     last_log[server_index - 1] = new_log;
                 } else {
-                    last_log[server_index - 1]->next = new_log;
-                    last_log[server_index - 1] = new_log;
+                    ret = insert_log(logs[server_index - 1], last_log[server_index - 1], new_log);
+                    if (ret < 0) {
+                        printf("Error: failed to append message during merge. logs[%d] or last_log[%d] does not exist.\n", server_index -1, server_index - 1);
+                        break; 
+                    }
                 }
 
                 // Adopt the lamport timestamp if it is higher
@@ -762,12 +768,36 @@ static void Read_message()
                 // Update matrix[my_server_index][server_index] to the new timestamp
                 matrix[my_server_index - 1][server_index - 1] = my_timestamp;
 
-                ret = sscanf(update, "a %s %s%n", room_name, username, &num_read);
-                if (ret < 2) {
-                    printf("Error: cannot parse room_name and username from UPDATE_NORMAL %s\n", message);
-                }
-
                 if (update[0] == 'a') {
+                    ret = sscanf(update, "a %s %s%n", room_name, username, &num_read);
+                    if (ret < 2) {
+                        printf("Error: cannot parse room_name and username from UPDATE_MERGE %s\n", message);
+                    }
+
+                    // Insert message to messages list of the room, in the order of timestamp+server_index
+                    struct message *new_message = malloc(sizeof(struct message));
+                    new_message->timestamp = timestamp;
+                    new_message->server_index = server_index;
+                    strcpy(new_message->content, &update[num_read + 1]);
+                    strcpy(new_message->creator, username);
+                    new_message->liked_by = NULL;
+                    new_message->next = NULL;
+
+                    struct room* room = find_room(rooms, room_name);
+                    ret = insert_message(room, new_message);
+                    if (ret < 0) {
+                        printf("Error: fail to append message. %s does not exist\n", room_name);
+                        break;
+                    }
+
+                    // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
+                    sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
+                    sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
+                    ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
+                    if (ret < 0) {
+                        SP_error(ret);
+                        Bye();
+                    }
 
                 } else if (update[0] == 'l') {
                     
@@ -777,6 +807,75 @@ static void Read_message()
                     printf("Error: unknown command in UPDATE_MERGE %s\n", message);
                     break;
                 }
+
+                bool merge_completed = true;
+                for (int j = 0; j < 5; j++) {
+                    merge_completed = merge_completed && (matrix[my_server_index - 1][j] == expected_timestamp[j]);
+                }
+
+                if (merge_completed) {
+                    // TODO: For every update in like_updates list ... 
+
+                    // Mark as out of merging state
+                    merging = false;
+                    printf("Server: Finished merging\n");
+
+                    int num_read; 
+                    while (buffer != NULL) {
+                        char command = buffer->content[0];
+                        if (command == 'a') {
+
+                            ret = sscanf(buffer->content, "a %s %s%n", room_name, username, &num_read);
+                            if (ret < 2) {
+                                printf("Error: cannot parse room_name and username from UPDATE_NORMAL %s\n", message);
+                            }
+
+                            // Insert message to messages list of the room, in the order of timestamp+server_index
+                            struct message *new_message = malloc(sizeof(struct message));
+                            new_message->timestamp = buffer->timestamp;
+                            new_message->server_index = my_server_index;
+                            strcpy(new_message->content, &buffer->content[num_read + 1]);
+                            strcpy(new_message->creator, username);
+                            new_message->liked_by = NULL;
+                            new_message->next = NULL;
+
+                            struct room* room = find_room(rooms, room_name);
+                            ret = insert_message(room, new_message);
+                            if (ret < 0) {
+                                printf("Error: fail to append message. %s does not exist\n", room_name);
+                                break;
+                            }
+
+                            // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
+                            sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
+                            sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
+                            ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
+                            if (ret < 0) {
+                                SP_error(ret);
+                                Bye();
+                            }
+                            
+                        } else if (command == 'l') {
+
+                        } else if (command == 'r') {
+
+                        } else {
+                            printf("Error: unknown command in UPDATE_NORMAL %s\n", message);
+                            break;
+                        }
+                        struct log * cur_ptr_copy = buffer; 
+                        buffer = buffer->next; 
+                        free(cur_ptr_copy); 
+                    } // end of while loop
+                    // clear buffer
+                    buffer = NULL; 
+                    end_of_buffer = NULL;
+
+
+
+                }
+
+
                 
                 break; 
             }
@@ -1257,3 +1356,28 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
 
     return 0;
 }
+
+int insert_log(struct log * log_head, struct log * log_tail, struct log* log_target)
+{
+    if (log_head == NULL || log_tail == NULL) {
+        return -1;
+    }
+    
+    struct log * cur = log_head;
+    struct log * prev = NULL; 
+    while (cur->next != NULL) {
+        if (cur->next->timestamp > log_target->timestamp) {
+            log_target->next = cur->next; 
+            cur->next = log_target; 
+            return 0;
+        }
+    cur = cur->next; 
+    }
+
+    // insert at last position
+    log_target->next = cur->next;
+    cur->next = log_target; 
+    log_tail = log_target;
+    return 0;
+}
+
