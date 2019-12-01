@@ -419,6 +419,31 @@ static void User_command()
                 break; 
             }
 
+            ret = sscanf( &command[2], "%d", &line_number );
+            if (ret < 1) {
+				printf(" invalid line number [1-25]\n");
+				break;
+			}
+            if (line_number < 1 || line_number > num_messages) {
+                printf(" invalid line number [1-25] \n");
+				break;
+            }
+
+            // Find the message’s lamport timestamp and server index in the messages list
+            struct message * cur_mess = messages;
+            for (int i = 0; i < line_number - 1; i++) {
+                cur_mess = cur_mess->next;
+            }
+            int disliked_timestamp = cur_mess->timestamp; 
+            int disliked_server_index = cur_mess->server_index;
+
+            // Send “UPDATE_CLIENT r <room_name> <timestamp of the liked message> <server_index of the liked message> <username>” to the server’s public group
+            sprintf(message, "r %s %d %d %s", room_name, disliked_timestamp, disliked_server_index, username);
+            ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, strlen(message), message);
+            if (ret < 0) {
+                SP_error(ret);
+            }
+
             break;
         }
 
