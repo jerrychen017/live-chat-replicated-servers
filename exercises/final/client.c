@@ -20,6 +20,7 @@ static int server_index;
 static bool connected;
 static char room_name[80];
 static bool joined;
+static int line_number; 
 
 static char server_group[80];
 static char server_client_group[80 + 15];
@@ -351,6 +352,71 @@ static void User_command()
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, strlen(message), message);
             if (ret < 0) {
                 SP_error(ret);
+            }
+
+            break;
+        }
+
+        case 'l':
+        {
+            if (!logged_in) {
+                printf("Client: did not login using command 'u'\n");
+                break;
+            }
+
+            if (!connected) {
+                printf("Client: did not connect with server using command 'c'\n");
+                break;
+            }
+
+            if (!joined) {
+                printf("Client: did not join a room using command 'j'\n");
+                break; 
+            }
+
+            ret = sscanf( &command[2], "%d", &line_number );
+            if (ret < 1) {
+				printf(" invalid line number [1-25]\n");
+				break;
+			}
+            if (line_number < 1 || line_number > num_messages) {
+                printf(" invalid line number [1-25] \n");
+				break;
+            }
+
+            // Find the message’s lamport timestamp and server index in the messages list
+            struct message * cur_mess = messages;
+            for (int i = 0; i < line_number - 1; i++) {
+                cur_mess = cur_mess->next;
+            }
+            int liked_timestamp = cur_mess->timestamp; 
+            int liked_server_index = cur_mess->server_index;
+
+            // Send “UPDATE_CLIENT l <room_name> <timestamp of the liked message> <server_index of the liked message> <username>” to the server’s public group
+            sprintf(message, "l %s %d %d %s", room_name, liked_timestamp, liked_server_index, username);
+            ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, strlen(message), message);
+            if (ret < 0) {
+                SP_error(ret);
+            }
+
+            break; 
+        }
+
+        case 'r':
+        {
+            if (!logged_in) {
+                printf("Client: did not login using command 'u'\n");
+                break;
+            }
+
+            if (!connected) {
+                printf("Client: did not connect with server using command 'c'\n");
+                break;
+            }
+
+            if (!joined) {
+                printf("Client: did not join a room using command 'j'\n");
+                break; 
             }
 
             break;
