@@ -18,5 +18,6 @@
 #define UPDATE_CLIENT 7 
 #define UPDATE_NORMAL 8 
 #define APPEND 9
+#define UPDATE_MERGE 10
 
 #endif
