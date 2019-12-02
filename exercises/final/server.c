@@ -504,13 +504,13 @@ static void Read_message()
                     }
 
                     // If the current server has all logs up to date
-                    bool same = true;
+                    bool merging_completed = true;
                     for (j = 0; j < 5; j++) {
                         if (matrix[my_server_index - 1][j] != expected_timestamp[j]) {
-                            same = false;
+                            merging_completed = false;
                         }
                     }
-                    if (same) {
+                    if (merging_completed) {
                         // Mark as out of merging state
                         merging = false;
                         printf("Server: Finish merging\n");
@@ -609,7 +609,7 @@ static void Read_message()
                 // Save the update to file, memory and update timestamp & matrix accordingly
                 ret = save_update(timestamp, server_index, update);
                 if (ret < 0) {
-                    printf("Error: fail to save update in UPDATE_NORMAL %s\n", message);
+                    printf("Error: fail to save update from UPDATE_NORMAL %s\n", message);
                     break;
                 }
 
@@ -642,8 +642,8 @@ static void Read_message()
                 printf("Receive UPDATE_MERGE %s\n", message);
                 // message = <timestamp> <server_index> <update>
 
-                if (!merging) { 
-                    printf("Warning: received UPDATE_MERGE after merging completed.\n");
+                // If the current server has finished merging
+                if (!merging) {
                     break;
                 }
 
@@ -654,82 +654,30 @@ static void Read_message()
 
                 ret = sscanf(message, "%d %d%n", &timestamp, &server_index, &num_read);
                 if (ret < 2) {
-                    printf("Error: cannot parse timestamp and server_index from UPDATE_NORMAL %s\n", message);
+                    printf("Error: cannot parse timestamp and server_index from UPDATE_MERGE %s\n", message);
                     break;
                 }
 
-                if (update[0] == 'a' && timestamp <= matrix[my_server_index - 1][server_index - 1]) {
-                    printf("Warning: update already exists.\n");
-                    break; 
-                }
-
+                strcpy(update, &message[num_read + 1]);
                 
-                // Write update to “server[my_server_index]-log[server_index].out” file
-                log_fd[server_index - 1] = fopen(log_file_names[server_index - 1], "a+");
-                ret = fprintf(log_fd[server_index - 1], "%d %s\n", timestamp, update);
-                if (ret < 0) {
-                    printf("Error: fail to write update %s to file %s\n", update, log_file_names[server_index - 1]);
-                    break;
-                }
-                fclose(log_fd[server_index - 1]);
-
-                // Append it in logs[server_index] list
-                struct log* new_log = malloc(sizeof(struct log));
-                new_log->timestamp = timestamp;
-                new_log->server_index = server_index;
-                strcpy(new_log->content, update);
-                new_log->next = NULL;
-
-                if (logs[server_index - 1] == NULL) {
-                    logs[server_index - 1] = new_log;
-                    last_log[server_index - 1] = new_log;
-                } else {
-                    ret = insert_log(logs[server_index - 1], last_log[server_index - 1], new_log);
+                // If update does not exist
+                bool exist = true;
+                if (timestamp > matrix[my_server_index - 1][server_index - 1]) {
+                    exist = false;
+                    ret = save_update(timestamp, server_index, update);
                     if (ret < 0) {
-                        printf("Error: failed to append message during merge. logs[%d] or last_log[%d] does not exist.\n", server_index -1, server_index - 1);
-                        break; 
-                    }
-                }
-
-                // Adopt the lamport timestamp if it is higher
-                if (timestamp > my_timestamp) {
-                    my_timestamp = timestamp;
-                }
-
-                // Update matrix[my_server_index][server_index] to the new timestamp
-                matrix[my_server_index - 1][server_index - 1] = my_timestamp;
-
-                if (update[0] == 'a') {
-                    ret = sscanf(update, "a %s %s%n", room_name, username, &num_read);
-                    if (ret < 2) {
-                        printf("Error: cannot parse room_name and username from UPDATE_MERGE %s\n", message);
-                    }
-
-                    // Insert message to messages list of the room, in the order of timestamp+server_index
-                    struct message *new_message = malloc(sizeof(struct message));
-                    new_message->timestamp = timestamp;
-                    new_message->server_index = server_index;
-                    strcpy(new_message->content, &update[num_read + 1]);
-                    strcpy(new_message->creator, username);
-                    new_message->liked_by = NULL;
-                    new_message->next = NULL;
-
-                    struct room* room = find_room(rooms, room_name);
-                    ret = insert_message(room, new_message);
-                    if (ret < 0) {
-                        printf("Error: fail to append message. %s does not exist\n", room_name);
+                        printf("Error: fail to save update from UPDATE_MERGE %s\n", message);
                         break;
                     }
+                }
 
-                    // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
-                    sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
-                    sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
-                    ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
-                    if (ret < 0) {
-                        SP_error(ret);
-                        Bye();
+                if (update[0] == 'a') {
+                    // If it is a new append update, i.e does not exist before
+                    if (!exist) {
+                        ret = execute_append(timestamp, server_index, update);
                     }
 
+                // TODO: if the merging update is 'l' or 'r', update like_updates list
                 } else if (update[0] == 'l') {
                     
                 } else if (update[0] == 'r') {
@@ -739,74 +687,54 @@ static void Read_message()
                     break;
                 }
 
-                bool merge_completed = true;
-                for (int j = 0; j < 5; j++) {
-                    merge_completed = merge_completed && (matrix[my_server_index - 1][j] == expected_timestamp[j]);
+                // If the current server has all logs up to date
+                bool merging_completed = true;
+                for (j = 0; j < 5; j++) {
+                    if (matrix[my_server_index - 1][j] != expected_timestamp[j]) {
+                        merging_completed = false;
+                    }
                 }
+                if (merging_completed) {
 
-                if (merge_completed) {
-                    // TODO: For every update in like_updates list ... 
+                    /* TODO:
+                    For every update in like_updates list
+                        execute_like/execute_unlike
+                    */
 
                     // Mark as out of merging state
                     merging = false;
-                    printf("Server: Finished merging\n");
+                    printf("Server: Finish merging\n");
 
-                    int num_read; 
+                    // Execute updates received in buffer during merging
                     while (buffer != NULL) {
-                        char command = buffer->content[0];
-                        if (command == 'a') {
 
-                            ret = sscanf(buffer->content, "a %s %s%n", room_name, username, &num_read);
-                            if (ret < 2) {
-                                printf("Error: cannot parse room_name and username from UPDATE_NORMAL %s\n", message);
-                            }
+                        ret = save_update(buffer->timestamp, buffer->server_index, buffer->content);
+                        if (ret < 0) {
+                            printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
+                        }
 
-                            // Insert message to messages list of the room, in the order of timestamp+server_index
-                            struct message *new_message = malloc(sizeof(struct message));
-                            new_message->timestamp = buffer->timestamp;
-                            new_message->server_index = my_server_index;
-                            strcpy(new_message->content, &buffer->content[num_read + 1]);
-                            strcpy(new_message->creator, username);
-                            new_message->liked_by = NULL;
-                            new_message->next = NULL;
-
-                            struct room* room = find_room(rooms, room_name);
-                            ret = insert_message(room, new_message);
-                            if (ret < 0) {
-                                printf("Error: fail to append message. %s does not exist\n", room_name);
-                                break;
-                            }
-
-                            // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
-                            sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
-                            sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
-                            ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
-                            if (ret < 0) {
-                                SP_error(ret);
-                                Bye();
-                            }
-                            
-                        } else if (command == 'l') {
-
-                        } else if (command == 'r') {
-
+                        if (buffer->content[0] == 'a') {
+                            ret = execute_append(buffer->timestamp, buffer->server_index, buffer->content);
+                        } else if (buffer->content[0] == 'l') {
+                            ret = execute_like(buffer->content);
+                        } else if (buffer->content[0] == 'r') {
+                            ret = execute_unlike(buffer->content);
                         } else {
-                            printf("Error: unknown command in UPDATE_NORMAL %s\n", message);
+                            printf("Error: unknown command in update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
                             break;
                         }
-                        struct log * cur_ptr_copy = buffer; 
+                        if (ret < 0) {
+                            printf("Error: fail to execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
+                            break;
+                        }
+
+                        struct log *to_delete = buffer; 
                         buffer = buffer->next; 
-                        free(cur_ptr_copy); 
-                    } // end of while loop
-                    // clear buffer
+                        free(to_delete);
+                    }
                     buffer = NULL; 
                     end_of_buffer = NULL;
-
-
-
                 }
-
-
                 
                 break; 
             }
@@ -1376,27 +1304,3 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
 
     return 0;
 }
-
-int insert_log(struct log * log_head, struct log * log_tail, struct log* log_target)
-{
-    if (log_head == NULL || log_tail == NULL) {
-        return -1;
-    }
-    
-    struct log * cur = log_head;
-    while (cur->next != NULL) {
-        if (cur->next->timestamp > log_target->timestamp) {
-            log_target->next = cur->next; 
-            cur->next = log_target; 
-            return 0;
-        }
-    cur = cur->next; 
-    }
-
-    // insert at last position
-    log_target->next = cur->next;
-    cur->next = log_target; 
-    log_tail = log_target;
-    return 0;
-}
-
