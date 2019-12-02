@@ -1022,7 +1022,7 @@ static int execute_append(int timestamp, int server_index, char *update)
     char to_send[MAX_MESS_LEN];
     int num_read;
 
-    // a <room_name> <username> <content>
+    // update = a <room_name> <username> <content>
     ret = sscanf(update, "a %s %s%n", room_name, username, &num_read);
     if (ret < 2) {
         printf("Error: cannot parse room_name and username from UPDATE_NORMAL %s\n", update);
@@ -1057,9 +1057,59 @@ static int execute_append(int timestamp, int server_index, char *update)
     return 0;
 }
 
-// TODO
 static int execute_like(char *update)
 {
+    int ret;
+    int timestamp;
+    int server_index;
+    char to_send[MAX_MESS_LEN];
+
+    // update = l <room_name> <timestamp of the liked message> <server_index of the liked message> <username>
+    ret = sscanf(update, "l %s %d %d %s", room_name, &timestamp, &server_index, username);
+    if (ret < 4) {
+        printf("Error: cannot parse room_name, timestamp, server_index and username from update %s\n", update);
+        return -1;
+    }
+
+    struct room *room = find_room(rooms, room_name);
+    if (room == NULL) {
+        printf("Error: cannot find room named %s\n", room_name);
+        return -1;
+    }
+
+    struct message *message = find_message(room, timestamp, server_index);
+    if (message == NULL) {
+        printf("Error: cannot find message with timestamp %d and server_index %d in room %s\n", timestamp, server_index, room_name);
+        return -1;
+    }
+
+    // Check if user is the creator
+    if (strcmp(username, message->creator) == 0) {
+        printf("Server: message is created by %s and cannot be liked by the creator\n", username);
+        return 0;
+    }
+
+    // Check if the message has been liked by the user
+    int num_likes = add_like(message, username);
+    if (num_likes < 0) {
+        printf("Server: message has been liked by %s\n", username);
+        return 0;
+    }
+
+    printf("Server: add 1 like to message %s in %s\n", message->content, room_name);
+
+    // If the current server has participants in this room
+    if (room->participants[my_server_index - 1] != NULL) {
+        // Send “LIKES <message’s timestamp> <message’s server_index> <num_likes>” to the server-room group
+        sprintf(to_send, "%d %d %d", timestamp, server_index, num_likes);
+        sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
+        ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, LIKES, strlen(to_send), to_send);
+        if (ret < 0) {
+            SP_error(ret);
+            Bye();
+        }
+    }
+
     return 0;
 }
 
@@ -1227,6 +1277,63 @@ int insert_message(struct room* room, struct message* message)
     return 0;
 }
 
+struct message* find_message(struct room *room, int timestamp, int server_index)
+{
+    if (room == NULL || room->messages == NULL) {
+        return NULL;
+    }
+
+    struct message *cur = room->messages;
+    while (cur != NULL) {
+        if (cur->timestamp == timestamp && cur->server_index == server_index) {
+            return cur;
+        }
+        cur = cur->next;
+    }
+
+    return NULL;
+}
+
+int add_like(struct message *message, char* username)
+{
+    if (message == NULL) {
+        return -2;
+    }
+
+    if (message->liked_by == NULL) {
+        struct participant *new_participant = malloc(sizeof(struct participant));
+        strcpy(new_participant->name, username);
+        new_participant->next = NULL;
+
+        message->liked_by = new_participant;
+        return 1;
+    }
+
+    struct participant dummy;
+    dummy.next = message->liked_by;
+
+    struct participant *cur = &dummy;
+
+    int num_likes = 0;
+
+    while (cur->next != NULL) {
+        // if username already exists in liked_by list
+        if (strcmp(cur->next->name, username) == 0) {
+            return -1;
+        }
+        cur = cur->next;
+        num_likes++;
+    }
+
+    struct participant *new_participant = malloc(sizeof(struct participant));
+    strcpy(new_participant->name, username);
+    new_participant->next = NULL;
+
+    cur->next = new_participant;
+    num_likes++;
+
+    return num_likes;
+}
 
 void get_messages(char* to_send, struct room* room) {
     if (room == NULL || room->messages == NULL) {
@@ -1345,6 +1452,8 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
             // delete log at current position
             struct log *to_delete = cur;
             free(to_delete);
+        } else {
+            break;
         }
         cur = next_log;
     }
