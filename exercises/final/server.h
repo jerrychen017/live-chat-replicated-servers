@@ -37,6 +37,14 @@ void clear_client(struct room* room, int server_index);
 int add_client(struct room* room, char* client_name, int server_index);
 int remove_client(struct room* room, char* client_name, int server_index);
 int insert_message(struct room* room, struct message* message);
+struct message* find_message(struct room *room, int timestamp, int server_index);
+/*
+    Add usernmae to message's liked_by list
+    Return -2 if message is null
+    Return -1 if user has already liked the message
+    Return updated # of likes if succesfully add a like
+*/
+int add_like(struct message *message, char* username);
 void get_messages(char* to_send, struct room* room);
 void get_participants(char* to_send, struct room* room);
 int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp);

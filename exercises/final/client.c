@@ -650,6 +650,32 @@ static void Read_message()
                 break;
             }
 
+            case LIKES:
+            {
+                // message = <message’s timestamp> <message’s server_index> <num_likes>
+                int timestamp;
+                int message_server_index;
+                int num_likes;
+                ret = sscanf(message, "%d %d %d", &timestamp, &message_server_index, &num_likes);
+                if (ret < 3) {
+                    printf("Error: cannot parse timestamp, server_index and num_likes from LIKES %s\n", message);
+                    break;
+                }
+
+                // Find the message in list
+                struct message *cur = messages;
+                while (cur != NULL) {
+                    if (cur->timestamp == timestamp && cur->server_index == message_server_index) {
+                        // Update num_likes for the message
+                        cur->num_likes = num_likes;
+                        Display();
+                    }
+                    cur = cur->next;
+                }
+
+                break;
+            }
+
             default:
             {
                 printf("Warning: receive unknown message type\n");
