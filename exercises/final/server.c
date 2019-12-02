@@ -279,14 +279,16 @@ static void Read_message()
                         printf("Error: fail to remove client %s from %s", client_name, old_room_name);
                     } else {
                         printf("Server: remove client %s from %s\n", client_name, old_room_name);
-                        // Send new participant list to the server-room group
-                        get_participants(to_send, old_room);
-                        sprintf(server_room_group, "server%d-%s", my_server_index, old_room_name);
-                        ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
-                        if (ret < 0) {
-				            SP_error( ret );
-				            Bye();
-			            }
+                        if (old_room->participants[my_server_index - 1] != NULL) {
+                            // Send new participant list to the server-room group
+                            get_participants(to_send, old_room);
+                            sprintf(server_room_group, "server%d-%s", my_server_index, old_room_name);
+                            ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
+                            if (ret < 0) {
+				                SP_error( ret );
+				                Bye();
+			                }
+                        }
                     }
                 }
 
@@ -301,14 +303,16 @@ static void Read_message()
                         printf("Error: fail to add client %s to %s", client_name, new_room_name);
                     } else {
                         printf("Server: add client %s to %s\n", client_name, new_room_name);
-                        // Send new participant list to the server-room group
-                        get_participants(to_send, new_room);
-                        sprintf(server_room_group, "server%d-%s", my_server_index, new_room_name);
-                        ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
-                        if (ret < 0) {
-				            SP_error( ret );
-				            Bye();
-			            }
+                        if (new_room->participants[my_server_index - 1] != NULL) {
+                            // Send new participant list to the server-room group
+                            get_participants(to_send, new_room);
+                            sprintf(server_room_group, "server%d-%s", my_server_index, new_room_name);
+                            ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
+                            if (ret < 0) {
+				                SP_error( ret );
+				                Bye();
+			                }
+                        }
                     }
                 }
 
@@ -1027,13 +1031,15 @@ static int execute_append(int timestamp, int server_index, char *update)
 
     printf("Server: append message created by %s to %s: %s\n", new_message->creator, room_name, new_message->content);
 
-    // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
-    sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
-    sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
-    ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
-    if (ret < 0) {
-        SP_error(ret);
-        Bye();
+    if (room->participants[my_server_index - 1] != NULL) {
+        // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
+        sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
+        sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
+        ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
+        if (ret < 0) {
+            SP_error(ret);
+            Bye();
+        }
     }
     return 0;
 }
@@ -1077,7 +1083,7 @@ static int execute_like(char *update)
         return 0;
     }
 
-    printf("Server: add 1 like to message %s in %s\n", message->content, room_name);
+    printf("Server: add like of %s to message %s in %s\n", username, message->content, room_name);
 
     // If the current server has participants in this room
     if (room->participants[my_server_index - 1] != NULL) {
@@ -1094,9 +1100,59 @@ static int execute_like(char *update)
     return 0;
 }
 
-// TODO
 static int execute_unlike(char *update)
 {
+    int ret;
+    int timestamp;
+    int server_index;
+    char to_send[MAX_MESS_LEN];
+
+    // update = r <room_name> <timestamp of the liked message> <server_index of the liked message> <username>
+    ret = sscanf(update, "r %s %d %d %s", room_name, &timestamp, &server_index, username);
+    if (ret < 4) {
+        printf("Error: cannot parse room_name, timestamp, server_index and username from update %s\n", update);
+        return -1;
+    }
+
+    struct room *room = find_room(rooms, room_name);
+    if (room == NULL) {
+        printf("Error: cannot find room named %s\n", room_name);
+        return -1;
+    }
+
+    struct message *message = find_message(room, timestamp, server_index);
+    if (message == NULL) {
+        printf("Error: cannot find message with timestamp %d and server_index %d in room %s\n", timestamp, server_index, room_name);
+        return -1;
+    }
+
+    // Check if user is the creator
+    if (strcmp(username, message->creator) == 0) {
+        printf("Server: message is created by %s and cannot be unliked by the creator\n", username);
+        return 0;
+    }
+
+    // Check if the message has been liked by the user
+    int num_likes = remove_like(message, username);
+    if (num_likes < 0) {
+        printf("Server: message has not been liked by %s\n", username);
+        return 0;
+    }
+
+    printf("Server: remove like of %s to message %s in %s\n", username, message->content, room_name);
+    
+    // If the current server has participants in this room
+    if (room->participants[my_server_index - 1] != NULL) {
+        // Send “LIKES <message’s timestamp> <message’s server_index> <num_likes>” to the server-room group
+        sprintf(to_send, "%d %d %d", timestamp, server_index, num_likes);
+        sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
+        ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, LIKES, strlen(to_send), to_send);
+        if (ret < 0) {
+            SP_error(ret);
+            Bye();
+        }
+    }
+
     return 0;
 }
 
@@ -1312,6 +1368,40 @@ int add_like(struct message *message, char* username)
 
     cur->next = new_participant;
     num_likes++;
+
+    return num_likes;
+}
+
+int remove_like(struct message *message, char *username)
+{
+    if (message == NULL) {
+        return -2;
+    }
+
+    struct participant dummy;
+    dummy.next = message->liked_by;
+
+    struct participant *cur = &dummy;
+
+    int num_likes = 0;
+    bool deleted = false;
+
+    while (cur->next != NULL) {
+        if (strcmp(cur->next->name, username) == 0) {
+            // remove participant at cur->next
+            struct participant *to_delete = cur->next;
+            cur->next = cur->next->next;
+            free(to_delete);
+            deleted = true;
+        }
+        cur = cur->next;
+        num_likes++;
+    }
+
+    // user does not exist in the list
+    if (!deleted) {
+        return -1;
+    }
 
     return num_likes;
 }

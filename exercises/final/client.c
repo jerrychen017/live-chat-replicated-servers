@@ -669,6 +669,7 @@ static void Read_message()
                         // Update num_likes for the message
                         cur->num_likes = num_likes;
                         Display();
+                        break;
                     }
                     cur = cur->next;
                 }
