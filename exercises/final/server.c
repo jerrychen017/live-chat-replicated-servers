@@ -493,10 +493,16 @@ static void Read_message()
                             continue;
                         }
 
+                        printf("DEBUG: lowest timestamp %d\n", lowest_timestamp);
+                        printf("DEBUG: highest timestamp %d\n", highest_timestamp);
+
+
                         // Current server is responsible for sending missing updates for server j + 1
                         // Send “UPDATE_MERGE <timestamp> <server_index> <update>” to servers group with logs from lowest to highest timestamp
                         struct log* cur = logs[j];
+                        if (cur == NULL) {printf("DEBUG: log %d is NULL\n", j);}
                         while (cur != NULL) {
+                            printf("DEBUG: current timestamp %d\n", cur->timestamp);
                             if (cur->timestamp > lowest_timestamp) {
                                 sprintf(to_send, "%d %d %s", cur->timestamp, cur->server_index, cur->content);
                                 ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_MERGE, strlen(to_send), to_send);
@@ -508,15 +514,21 @@ static void Read_message()
                             }
                             cur = cur->next;
                         }
+                        
                     }
+
+                    printf("DEBUG: flag3\n");
 
                     // If the current server has all logs up to date
                     bool merging_completed = true;
                     for (j = 0; j < 5; j++) {
                         if (matrix[my_server_index - 1][j] != expected_timestamp[j]) {
                             merging_completed = false;
+                            printf("DEBUG: flag4\n");
                         }
                     }
+
+                    printf("DEBUG: flag5\n");
 
                     if (merging_completed) {
 
@@ -1324,13 +1336,17 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
     }
 
     struct log *cur = *logs_ref;
-    while (cur != NULL) {
+    if (cur == NULL) {
+        return 0;
+    }
+    while (cur->next != NULL) {
+        struct log * next_log = cur->next;
         if (cur->timestamp <= timestamp) {
             // delete log at current position
             struct log *to_delete = cur;
             free(to_delete);
         }
-        cur = cur->next;
+        cur = next_log;
     }
 
     *logs_ref = cur;
