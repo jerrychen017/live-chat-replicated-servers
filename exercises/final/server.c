@@ -1443,19 +1443,15 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
     }
 
     struct log *cur = *logs_ref;
-    if (cur == NULL) {
-        return 0;
-    }
-    while (cur->next != NULL) {
-        struct log * next_log = cur->next;
+    while (cur != NULL) {
         if (cur->timestamp <= timestamp) {
             // delete log at current position
             struct log *to_delete = cur;
+            cur = cur->next;
             free(to_delete);
         } else {
             break;
         }
-        cur = next_log;
     }
 
     *logs_ref = cur;
