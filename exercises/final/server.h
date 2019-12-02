@@ -45,6 +45,7 @@ struct message* find_message(struct room *room, int timestamp, int server_index)
     Return updated # of likes if succesfully add a like
 */
 int add_like(struct message *message, char* username);
+int remove_like(struct message *message, char *username);
 void get_messages(char* to_send, struct room* room);
 void get_participants(char* to_send, struct room* room);
 int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp);
