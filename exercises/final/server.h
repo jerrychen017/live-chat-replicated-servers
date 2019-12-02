@@ -24,6 +24,7 @@ struct message {
 
 struct log {
     int timestamp;
+    int server_index;
     char content[300];
     struct log* next;
 };

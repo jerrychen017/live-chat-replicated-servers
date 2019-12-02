@@ -419,7 +419,6 @@ static void User_command()
                 break; 
             }
 
-<<<<<<< HEAD
             ret = sscanf( &command[2], "%d", &line_number );
             if (ret < 1) {
 				printf(" invalid line number [1-25]\n");
@@ -445,8 +444,6 @@ static void User_command()
                 SP_error(ret);
             }
 
-=======
->>>>>>> 3450fb37811e05beaca87d27f5718f8dadd72ff3
             break;
         }
 
