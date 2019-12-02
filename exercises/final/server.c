@@ -37,6 +37,7 @@ static int matrix[5][5];
 static int my_timestamp; 
 
 static char log_file_names[5][30];
+
 static FILE *log_fd[5];
 static struct log *logs[5];
 static struct log *last_log[5];
@@ -44,7 +45,7 @@ static struct log *buffer;
 static struct log *end_of_buffer;
 
 static char state_file_name[30];
-//static FILE *state_fd;
+static FILE *state_fd;
 
 static void Read_message();
 static void Bye();
@@ -131,6 +132,7 @@ int main(int argc, char *argv[])
     if (access(state_file_name, F_OK) != -1 ) {
         printf("Server: Reconstruct data structures from state file\n");
         // TODO: Reconstruct data structures from state file; retrieve 5 lamport timestamps
+        
     }
 
     for (int i = 0; i < 5; i++) {
@@ -140,9 +142,62 @@ int main(int argc, char *argv[])
             TODO:
             read from the line matching with the corresponding timestamp
             save logs in memory
-            */
+            */  
+            // log_fd[i] = fopen(log_file_names[i], "r");
+
+            // if(log_fd[i] == NULL) {
+            //     printf("Cannot open log file %s\n", log_file_names[i]);
+            //     return -1;
+            // }
+            // FILE * fd = log_fd[i]; 
+            // char line[MAX_MESS_LEN]; 
+            // int len = 0; 
+            // int read;
+
+            // int timestamp;
+            // int server_index;
+            // char update[300];
+            // int num_read;
+            
+            // while((read = getline(&line, &len, fd)) != -1) {
+            //     ret = sscanf(line, "%d %d%n", &timestamp, &server_index, &num_read);
+            //     if (ret < 2) {
+            //         printf("Error: cannot parse timestamp and server_index when reading from file %s\n", log_file_names[i]);
+            //         break;
+            //     }
+            //     strcpy(update, &line[num_read + 1]);
+
+            //     // put update into memory if update does not exist
+            //     if (timestamp > matrix[my_server_index - 1][server_index - 1]) { 
+            //         // Append it in logs[server_index] list
+            //         struct log* new_log = malloc(sizeof(struct log));
+            //         new_log->timestamp = timestamp;
+            //         new_log->server_index = server_index;
+            //         strcpy(new_log->content, update);
+            //         new_log->next = NULL;
+
+            //         if (logs[server_index - 1] == NULL) {
+            //             logs[server_index - 1] = new_log;
+            //             last_log[server_index - 1] = new_log;
+            //         } else {
+            //             last_log[server_index - 1]->next = new_log;
+            //             last_log[server_index - 1] = new_log;
+            //         }
+
+            //         // Adopt the lamport timestamp if it is higher
+            //         if (timestamp > my_timestamp) {
+            //             my_timestamp = timestamp;
+            //         }
+
+            //         // Update matrix[my_server_index][server_index] to the new timestamp
+            //         matrix[my_server_index - 1][server_index - 1] = timestamp;
+
+            //     }
+            // }
+            // fclose(log_fd[i]);
         }
     }
+
 
     /* TODO:    
     Execute logs in the order of lamport timestamp + process_index
