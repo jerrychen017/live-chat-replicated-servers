@@ -442,11 +442,12 @@ static void Read_message()
                                 lowest_timestamp = matrix[i][j];
                             }
                         }
-                        ret = clear_log(&logs[i], &last_log[i], lowest_timestamp);
+                        ret = clear_log(&logs[j], &last_log[j], lowest_timestamp);
                         if (ret < 0) {
-                            printf("Error: fail to clear logs[%d] up to timestamp %d\n", i, lowest_timestamp);
+                            printf("Error: fail to clear logs[%d] up to timestamp %d\n", j, lowest_timestamp);
                             break;
                         }
+                        printf("Server: clear logs of server%d up to timestamp %d\n", j + 1, lowest_timestamp);
 
                         // Get lowest and highest timestamp of all ACTIVE servers for this server
                         if (!connected_servers[my_server_index - 1]) {
@@ -498,6 +499,7 @@ static void Read_message()
 				                    SP_error( ret );
 				                    Bye();
 			                    }
+                                printf("Server: send log for reconcilation: timestamp %d server_index %d content %s\n", cur->timestamp, cur->server_index, cur->content);
                             }
                             cur = cur->next;
                         }
@@ -511,12 +513,24 @@ static void Read_message()
                         }
                     }
                     if (merging_completed) {
+
+                        printf("Server: matrix = \n");
+                        for (i = 0; i < 5; i++) {
+                            printf("\t");
+                            for (int j = 0; j < 5; j++) {
+                                printf("%d ", matrix[i][j]);
+                            }
+                            printf("\n");
+                        }
+
                         // Mark as out of merging state
                         merging = false;
                         printf("Server: Finish merging\n");
 
                         // Execute updates received in buffer during merging
                         while (buffer != NULL) {
+
+                            printf("Server: Execute update in buffer: timestamp %d server_index %d content %s\n", buffer->timestamp, buffer->server_index, buffer->content);
 
                             ret = save_update(buffer->timestamp, buffer->server_index, buffer->content);
                             if (ret < 0) {
@@ -639,13 +653,14 @@ static void Read_message()
 
             case UPDATE_MERGE:
             {
-                printf("Receive UPDATE_MERGE %s\n", message);
                 // message = <timestamp> <server_index> <update>
 
                 // If the current server has finished merging
                 if (!merging) {
                     break;
                 }
+
+                printf("Receive UPDATE_MERGE %s\n", message);
 
                 int timestamp;
                 int server_index;
@@ -696,6 +711,15 @@ static void Read_message()
                 }
                 if (merging_completed) {
 
+                    printf("Server: matrix = \n");
+                    for (i = 0; i < 5; i++) {
+                        printf("\t");
+                        for (int j = 0; j < 5; j++) {
+                            printf("%d ", matrix[i][j]);
+                        }
+                        printf("\n");
+                    }
+
                     /* TODO:
                     For every update in like_updates list
                         execute_like/execute_unlike
@@ -708,6 +732,8 @@ static void Read_message()
                     // Execute updates received in buffer during merging
                     while (buffer != NULL) {
 
+                        printf("Server: Execute update in buffer: timestamp %d server_index %d content %s\n", buffer->timestamp, buffer->server_index, buffer->content);
+                        
                         ret = save_update(buffer->timestamp, buffer->server_index, buffer->content);
                         if (ret < 0) {
                             printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
@@ -977,6 +1003,7 @@ static int execute_append(int timestamp, int server_index, char *update)
     char to_send[MAX_MESS_LEN];
     int num_read;
 
+    // a <room_name> <username> <content>
     ret = sscanf(update, "a %s %s%n", room_name, username, &num_read);
     if (ret < 2) {
         printf("Error: cannot parse room_name and username from UPDATE_NORMAL %s\n", update);
@@ -997,6 +1024,8 @@ static int execute_append(int timestamp, int server_index, char *update)
         printf("Error: fail to append message. %s does not exist\n", room_name);
         return -1;
     }
+
+    printf("Server: append message created by %s to %s: %s\n", new_message->creator, room_name, new_message->content);
 
     // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
     sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
