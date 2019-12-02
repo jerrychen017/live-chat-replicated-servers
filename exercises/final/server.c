@@ -371,6 +371,7 @@ static void Read_message()
                 }
                 
                 num_matrices--;
+                
                 if (num_matrices < 0) {
                     printf("Error: number of matrices received is larger than expected\n");
                 }
@@ -412,8 +413,10 @@ static void Read_message()
                     }
                 }
 
+
                 // If just received expected number of matrices
                 if (num_matrices == 0) {
+                    
                     
                     // TODO: Clear liked_updates list
 
@@ -434,7 +437,6 @@ static void Read_message()
 
                     // Reconcile on logs of 5 servers
                     for (j = 0; j < 5; j++) {
-
                         // Clear logs[server_index] list up to the lowest timestamp of all 5 servers
                         int lowest_timestamp = matrix[0][j];
                         for (i = 0; i < 5; i++) {
@@ -442,6 +444,8 @@ static void Read_message()
                                 lowest_timestamp = matrix[i][j];
                             }
                         }
+
+
                         ret = clear_log(&logs[j], &last_log[j], lowest_timestamp);
                         if (ret < 0) {
                             printf("Error: fail to clear logs[%d] up to timestamp %d\n", j, lowest_timestamp);
@@ -454,6 +458,7 @@ static void Read_message()
                             printf("Error: this server%d is not in the current network component\n", my_server_index);
                             break;
                         }
+
                         lowest_timestamp = matrix[my_server_index - 1][j];
                         int highest_timestamp = matrix[my_server_index - 1][j];
                         int server_index = my_server_index;
@@ -512,6 +517,7 @@ static void Read_message()
                             merging_completed = false;
                         }
                     }
+
                     if (merging_completed) {
 
                         printf("Server: matrix = \n");
@@ -657,6 +663,7 @@ static void Read_message()
 
                 // If the current server has finished merging
                 if (!merging) {
+                    printf("Receive UPDATE_MERGE not during merging %s\n", message);
                     break;
                 }
 
@@ -1321,9 +1328,9 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
         if (cur->timestamp <= timestamp) {
             // delete log at current position
             struct log *to_delete = cur;
-            cur = cur->next;
             free(to_delete);
         }
+        cur = cur->next;
     }
 
     *logs_ref = cur;
