@@ -45,7 +45,7 @@ static struct log *buffer;
 static struct log *end_of_buffer;
 
 static char state_file_name[30];
-static FILE *state_fd;
+//static FILE *state_fd;
 
 static void Read_message();
 static void Bye();
@@ -1470,6 +1470,12 @@ int remove_like(struct message *message, char *username)
         }
         cur = cur->next;
         num_likes++;
+
+        // if remove the last participant
+        if (cur == NULL) {
+            num_likes--;
+            break;
+        }
     }
 
     // user does not exist in the list
