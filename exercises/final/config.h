@@ -1,12 +1,13 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define PORT "10100"
+#define PORT "10030"
 #define MAX_MESS_LEN 102400
 #define MAX_VSSETS      10
 #define MAX_MEMBERS     100
 #define CONNECTION_TIMEOUT_SEC 10
 #define CONNECTION_TIMEOUT_USEC 0
+#define FREQ_SAVE       10
 
 #define CONNECT 0
 #define JOIN 1
