@@ -309,6 +309,13 @@ static void User_command()
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, JOIN, strlen(room_name), room_name);
             printf("request to join room %s\n", room_name);
 
+            // clear participants list
+            while (participants != NULL) {
+                struct participant* to_delete = participants;
+                participants = participants->next;
+                free(to_delete);
+            }
+
             break;
         }
 

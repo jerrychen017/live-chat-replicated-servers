@@ -1044,7 +1044,6 @@ static void Read_message()
 
                 merging = true;
 
-                
                 // Find servers in the current network component
                 for (i = 0; i < 5; i++) {
                     connected_servers[i] = false;
