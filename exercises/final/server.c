@@ -52,7 +52,7 @@ static int num_update_normal;
 
 static void Read_message();
 static void Bye();
-static int read_state(FILE* state_fd);
+static int read_state();
 static int write_state();
 static void clear();
 static int save_update(int timestamp, int server_index, char* update);
@@ -744,15 +744,22 @@ static void Read_message()
                 For every FREQ_SAVE UPDATE_NORMAL messages received
                     Save state to state file
                 */
-               if (num_update_normal == FREQ_SAVE) {
+                if (num_update_normal == FREQ_SAVE) {
                     num_update_normal = 0;
-                    ret = write_state(); 
+                    state_fd = fopen(state_file_name, "w");
+
+                    ret = write_state();
                     if (ret < 0) {
-                        exit(1);
+                        printf("Server: fail to write state to file\n");
+                        break;
                     }
-               }
 
-
+                    ret = fclose(state_fd);
+                    if (ret < 0) {
+                        printf("Error: fail to close state file\n");
+                        break;
+                    }
+                }
 
                 break;
             }
@@ -1168,7 +1175,7 @@ static void Bye()
 	exit(0);
 }
 
-static int read_state(FILE* state_fd)
+static int read_state()
 {
     char *line = malloc(MAX_MESS_LEN);
     size_t length = MAX_MESS_LEN;
@@ -1193,6 +1200,8 @@ static int read_state(FILE* state_fd)
         free(line);
         return -1;
     }
+    printf("\tRetrive 5 timestamps: %d %d %d %d %d\n", matrix[my_server_index - 1][0], matrix[my_server_index - 1][1],
+        matrix[my_server_index - 1][2], matrix[my_server_index - 1][3], matrix[my_server_index - 1][4]);
 
     // Set my timestamp as the highest timestamp received
     my_timestamp = matrix[my_server_index - 1][0];
@@ -1233,6 +1242,7 @@ static int read_state(FILE* state_fd)
         }
 
         struct room *room = create_room(&rooms, room_name);
+        printf("\tCreate room %s with %d messages\n", room_name, num_messages);
 
         for (int j = 0; j < num_messages; j++) {
             // Read <timestamp> <server_index> <creator> <content>
@@ -1263,6 +1273,7 @@ static int read_state(FILE* state_fd)
                 free(line);
                 return -1;
             }
+            printf("\t\tinsert message created by %s: %s\n", new_message->creator, new_message->content);
 
             // Read <liked_by>
             ret = getline(&line, &length, state_fd);
@@ -1283,6 +1294,7 @@ static int read_state(FILE* state_fd)
                         free(line);
                         return -1;
                     }
+                    printf("\t\t\tadd like from %s\n", username);
                     username[0] = '\0';
                 }
             }
@@ -1294,74 +1306,78 @@ static int read_state(FILE* state_fd)
 }
 
 static int write_state() {
-    int ret; 
-    state_fd = fopen(state_file_name, "w");
-    // 5 lamport timestamps
+    int ret;
+
+    // Write first line: <5 lamport timestamps>
     for (int i = 0; i < 5; i++) {
         ret = fprintf(state_fd, "%d ", matrix[my_server_index - 1][i]);
         if (ret < 0) {
+            printf("Error: fail to write 5 timestamps to state file\n");
             return -1;
         }
     }
-                    
+
+    // Write second line: <num_rooms>
     struct room* cur_room = rooms;
     int num_rooms = 0;
     while(cur_room != NULL) {
         num_rooms++;
         cur_room = cur_room->next;
     }
-    // <num_rooms>
     ret = fprintf(state_fd, "\n%d\n", num_rooms);
     if (ret < 0) {
-        printf("Error: fail to write to state file %s\n", state_file_name);
+        printf("Error: fail to write num_rooms to state file %s\n", state_file_name);
         return -1;
     }
 
+    // Write room lines
     cur_room = rooms;
     while(cur_room != NULL) {
+
+        // Write <room_name> <num_messages>
         int num_messages = 0;
         struct message* cur_message = cur_room->messages;
         while(cur_message != NULL) {
             num_messages++; 
             cur_message = cur_message->next; 
         }
-        // <room_name> <num_messages>
         ret = fprintf(state_fd, "%s %d\n", cur_room->name, num_messages);
         if (ret < 0) {
-            printf("Error: fail to write to state file %s\n", state_file_name);
+            printf("Error: fail to write <room_name> <num_messages> to state file %s\n", state_file_name);
             return -1;
         }
 
         cur_message = cur_room->messages;
-        // message = <timestamp> <server_index> <creator> <content> <liked_by>	
         while(cur_message != NULL) {
-            ret = fprintf(state_fd, "%d %d %s %s ", cur_message->timestamp, cur_message->server_index, cur_message->creator, cur_message->content);
+            // Write <timestamp> <server_index> <creator> <content>
+            ret = fprintf(state_fd, "%d %d %s %s\n", cur_message->timestamp, cur_message->server_index,
+                cur_message->creator, cur_message->content);
             if (ret < 0) {
-                printf("Error: fail to write to state file %s\n", state_file_name);
+                printf("Error: fail to write message line to state file %s\n", state_file_name);
                 return -1;
             }
+
+            // Write <liked_by>
             struct participant* cur_liked_by = cur_message->liked_by;
             while(cur_liked_by != NULL) {
                 ret = fprintf(state_fd, "%s ", cur_liked_by->name);
                 if (ret < 0) {
-                    printf("Error: fail to write to state file %s\n", state_file_name);
+                    printf("Error: fail to write liked_by list to state file %s\n", state_file_name);
                     return -1;
                 }
                 cur_liked_by = cur_liked_by->next;
             }
-
             ret = fprintf(state_fd, "\n");
             if (ret < 0) {
-                printf("Error: fail to write to state file %s\n", state_file_name);
+                printf("Error: fail to write new line to state file %s\n", state_file_name);
                 return -1;
             }
 
-            cur_message = cur_message->next; 
+            cur_message = cur_message->next;
         }
         cur_room = cur_room->next;
     }
 
-    fclose(state_fd); 
     return 0;
 }
 
