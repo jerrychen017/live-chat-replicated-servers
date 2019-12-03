@@ -52,6 +52,8 @@ static int num_update_normal;
 
 static void Read_message();
 static void Bye();
+static int read_state(FILE* state_fd);
+static void clear();
 static int save_update(int timestamp, int server_index, char* update);
 static int execute_append(int timestamp, int server_index, char *update);
 static int execute_like(char *update);
@@ -136,8 +138,21 @@ int main(int argc, char *argv[])
     // If state file exists
     if (access(state_file_name, F_OK) != -1 ) {
         printf("Server: Reconstruct data structures from state file\n");
-        // TODO: Reconstruct data structures from state file; retrieve 5 lamport timestamps
+        state_fd = fopen(state_file_name, "r");
         
+        // Reconstruct data structures from state file
+        ret = read_state(state_fd);
+        if (ret < 0) {
+            // fail to read from state file
+            // clear data structures and set matrix and timestamp to 0
+            clear();
+        }
+
+        ret = fclose(state_fd);
+        if (ret < 0) {
+            printf("Error: fail to close state file %s\n", state_file_name);
+            exit(1);
+        }
     }
 
     for (int i = 0; i < 5; i++) {
@@ -861,7 +876,6 @@ static void Read_message()
                     } else {
                         ret = sscanf(update, "r %s %d %d %s", room_name, &message_timestamp, &message_server_index, username);
                     }
-
                     if (ret < 4) {
                         printf("Error: fail to parse room_name, timestamp, server_index, and username from UDPATE_MERGE %s\n", message);
                         break;
@@ -885,7 +899,6 @@ static void Read_message()
                         } else { 
                             printf("Error: unknown command %s in like_updates\n", cur->next->content);
                         }
-
                         if (ret < 4) {
                             printf("Error: fail to parse room_name, timestamp, server_index, and username from UDPATE_MERGE %s\n", message);
                             break;
@@ -898,9 +911,9 @@ static void Read_message()
 
                             if (timestamp > cur->next->timestamp 
                                 || (timestamp == cur->next->timestamp && server_index > cur->next->server_index)) {
-                                    cur->next->timestamp = timestamp;
-                                    cur->next->server_index = server_index;
-                                    strcpy(cur->next->content, update);
+                                cur->next->timestamp = timestamp;
+                                cur->next->server_index = server_index;
+                                strcpy(cur->next->content, update);
                             }
                             processed = true;
                             break;
@@ -953,7 +966,6 @@ static void Read_message()
                         }
                         printf("\n");
                     }
-
                     
                     // execute every update in like_updates list
                     while(like_updates != NULL) {
@@ -977,7 +989,7 @@ static void Read_message()
                     // Execute updates received in buffer during merging
                     while (buffer != NULL) {
 
-                        printf("Server: Execute update in buffer: timestamp %d server_index %d content %s\n", buffer->timestamp, buffer->server_index, buffer->content);
+                        printf("Server: execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
                         
                         ret = save_update(buffer->timestamp, buffer->server_index, buffer->content);
                         if (ret < 0) {
@@ -1009,10 +1021,24 @@ static void Read_message()
                 
                 break; 
             }
+
+            case VIEW:
+            {
+                // Send “VIEW <5 numbers 0/1>” to the client’s private group
+                sprintf(to_send, "%d %d %d %d %d", connected_servers[0], connected_servers[1],
+                    connected_servers[2], connected_servers[3], connected_servers[4]);
+                ret = SP_multicast(Mbox, AGREED_MESS, sender, VIEW, strlen(to_send), to_send);
+                if (ret < 0) {
+                    SP_error(ret);
+                    Bye();
+                }
+                break;
+            }
             
             default:
             {
                 printf("Warning: receive unknown message type\n");
+                break;
             }
         }
 
@@ -1199,9 +1225,184 @@ static void Bye()
 	To_exit = 1;
 
 	printf("\nBye.\n");
+    clear();
 
     SP_disconnect(Mbox);
 	exit(0);
+}
+
+static int read_state(FILE* state_fd)
+{
+    char *line = malloc(MAX_MESS_LEN);
+    size_t length = MAX_MESS_LEN;
+    char content[81];
+    int num_rooms;
+    int num_messages;
+    int timestamp;
+    int server_index;
+    int ret;
+
+    // Read first line: <5 lamport timestamps>
+    ret = getline(&line, &length, state_fd);
+    if (ret < 0) {
+        printf("Error: fail to read first line of state file %s\n", state_file_name);
+        free(line);
+        return -1;
+    }
+    ret = sscanf(line, "%d %d %d %d %d", &matrix[my_server_index - 1][0], &matrix[my_server_index - 1][1],
+        &matrix[my_server_index - 1][2], &matrix[my_server_index - 1][3], &matrix[my_server_index - 1][4]);
+    if (ret < 5) {
+        printf("Error: fail to read 5 lamport timestamps from first line %s\n", line);
+        free(line);
+        return -1;
+    }
+
+    // Set my timestamp as the highest timestamp received
+    my_timestamp = matrix[my_server_index - 1][0];
+    for (int i = 0; i < 5; i++) {
+        if (matrix[my_server_index - 1][i] > my_timestamp) {
+            my_timestamp = matrix[my_server_index - 1][i];
+        }
+    }
+
+    // Read second line: <number of rooms>
+    ret = getline(&line, &length, state_fd);
+    if (ret < 0) {
+        printf("Error: fail to read second line of state file %s\n", state_file_name);
+        free(line);
+        return -1;
+    }
+    ret = sscanf(line, "%d", &num_rooms);
+    if (ret < 1) {
+        printf("Error: fail to read number of rooms in line %s\n", line);
+        free(line);
+        return -1;
+    }
+
+    // Read room lines
+    for (int i = 0; i < num_rooms; i++) {
+        // Read <room_name> <num_messages>
+        ret = getline(&line, &length, state_fd);
+        if (ret < 0) {
+            printf("Error: fail to read first line of room in state file %s\n", state_file_name);
+            free(line);
+            return -1;
+        }
+        ret = sscanf(line, "%s %d", room_name, &num_messages);
+        if (ret < 2) {
+            printf("Error: fail to read room_name and num_messages in line %s\n", line);
+            free(line);
+            return -1;
+        }
+
+        struct room *room = create_room(&rooms, room_name);
+
+        for (int j = 0; j < num_messages; j++) {
+            // Read <timestamp> <server_index> <creator> <content>
+            ret = getline(&line, &length, state_fd);
+            if (ret < 0) {
+                printf("Error: fail to read message line in state file %s\n", state_file_name);
+                free(line);
+                return -1;
+            }
+            ret = sscanf(line, "%d %d %s %[^\n]\n", &timestamp, &server_index, username, content);
+            if (ret < 4) {
+                printf("Error: fail to parse timestamp, server_index, creator and num_likes from line %s\n", line);
+                free(line);
+                return -1;
+            }
+
+            struct message *new_message = malloc(sizeof(struct message));
+            new_message->timestamp = timestamp;
+            new_message->server_index = server_index;
+            strcpy(new_message->content, content);
+            strcpy(new_message->creator, username);
+            new_message->liked_by = NULL;
+            new_message->next = NULL;
+
+            ret = insert_message(room, new_message);
+            if (ret < 0) {
+                printf("Error: fail to insert message to room %s\n", room_name);
+                free(line);
+                return -1;
+            }
+
+            // Read <liked_by>
+            ret = getline(&line, &length, state_fd);
+            if (ret < 0) {
+                printf("Error: fail to read liked_by line in state file %s\n", state_file_name);
+                free(line);
+                return -1;
+            }
+            username[0] = '\0';
+            for (int k = 0; k < strlen(line); k++) {
+                if (line[k] != ' ') {
+                    username[strlen(username) + 1] = '\0';
+                    username[strlen(username)] = line[k];
+                } else {
+                    ret = add_like(new_message, username);
+                    if (ret < 0) {
+                        printf("Error: fail to add like of %s to message %s in state file\n", username, new_message->content);
+                        free(line);
+                        return -1;
+                    }
+                    username[0] = '\0';
+                }
+            }
+        }
+    }
+
+    free(line);
+    return 0;
+}
+
+static void clear()
+{
+    // delete rooms list
+    while (rooms != NULL) {
+        // delete messages list
+        struct message *cur_message = rooms->messages;
+        while (cur_message != NULL) {
+            // delete liked_by list
+            struct participant *cur_participant = cur_message->liked_by;
+            while (cur_participant != NULL) {
+                struct participant *participant_to_delete = cur_participant;
+                cur_participant = cur_participant->next;
+                free(participant_to_delete);
+            }
+            cur_message->liked_by = NULL;
+
+            struct message *message_to_delete = cur_message;
+            cur_message = cur_message->next;
+            free(message_to_delete);
+        }
+        rooms->messages = NULL;
+
+        // delete participants[i]
+        for (int i = 0; i < 5; i++) {
+            struct participant *cur_participant = rooms->participants[i];
+            while (cur_participant != NULL) {
+                struct participant *participant_to_delete = cur_participant;
+                cur_participant = cur_participant->next;
+                free(participant_to_delete);
+            }
+            rooms->participants[i] = NULL;
+        }
+
+        struct room *room_to_delete = rooms;
+        rooms = rooms->next;
+        free(room_to_delete);
+    }
+
+    rooms = NULL;
+
+    // Set matrix and timestamp to 0
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            matrix[i][j] = 0;
+        }
+    }
+    my_timestamp = 0;
 }
 
 static int save_update(int timestamp, int server_index, char* update)

@@ -449,6 +449,33 @@ static void User_command()
             break;
         }
 
+        case 'v':
+        {
+            if (!logged_in) {
+                printf("Client: did not login using command 'u'\n");
+                break;
+            }
+
+            if (!connected) {
+                printf("Client: did not connect with server using command 'c'\n");
+                break;
+            }
+
+            if (!joined) {
+                printf("Client: did not join a room using command 'j'\n");
+                break; 
+            }
+            
+            message[0] = '\0';
+            // Send “VIEW” to the server’s public group
+            ret = SP_multicast(Mbox, AGREED_MESS, server_group, VIEW, strlen(message), message);
+            if (ret < 0) {
+                SP_error(ret);
+                Bye();
+            }
+            break;
+        }
+
         default:
         {
             printf("\nUnknown commnad\n");
@@ -672,6 +699,26 @@ static void Read_message()
                         break;
                     }
                     cur = cur->next;
+                }
+
+                break;
+            }
+
+            case VIEW:
+            {
+                int connected_servers[5];
+                ret = sscanf(message, "%d %d %d %d %d", &connected_servers[0], &connected_servers[1],
+                    &connected_servers[2], &connected_servers[3], &connected_servers[4]);
+                if (ret < 5) {
+                    printf("Error: did not receive 5 numbers in VIEW %s\n", message);
+                    break;
+                }
+
+                printf("Client: current network has\n");
+                for (int i = 0; i < 5; i++) {
+                    if (connected_servers[i] == 1) {
+                        printf("\tserver%d\n", i + 1);
+                    }
                 }
 
                 break;
