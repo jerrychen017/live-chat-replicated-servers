@@ -194,7 +194,14 @@ int main(int argc, char *argv[])
 
     // Execute logs in the order of lamport timestamp + process_index
     while(updates != NULL) {
+
         printf("Server: execute update from log file: %d %d %s\n", updates->timestamp, updates->server_index, updates->content);
+
+        ret = save_update(updates->timestamp, updates->server_index, updates->content);
+        if (ret < 0) {
+            printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
+        }
+                        
         if (updates->content[0] == 'a') {
             // content = a <room_name> <username> <content>
             ret = sscanf(updates->content, "a %s", room_name);
