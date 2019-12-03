@@ -1383,17 +1383,15 @@ static int read_log(int i)
     int timestamp;
     int server_index;
     char update[300];
-    int num_read;
             
     while((ret = getline(&line, &length, log_fd[i])) != -1) {
         // line = <timestamp> <server_index> <update>
-        ret = sscanf(line, "%d %d%n", &timestamp, &server_index, &num_read);
+        ret = sscanf(line, "%d %d %[^\n]\n", &timestamp, &server_index, update);
         if (ret < 2) {
             printf("Error: cannot parse timestamp and server_index when reading from line %s\n", line);
             free(line);
             return -1;
         }
-        strcpy(update, &line[num_read + 1]);
 
         if (server_index != i + 1) {
             printf("Warning: log file server%d-log%d.out has updates for server%d\n", my_server_index, i + 1, server_index);
@@ -1535,7 +1533,7 @@ static int execute_append(int timestamp, int server_index, char *update)
         return -1;
     }
 
-    printf("Server: append message created by %s to %s: %s\n", new_message->creator, room_name, new_message->content);
+    printf("\tappend message created by %s to %s: %s\n", new_message->creator, room_name, new_message->content);
 
     if (room->participants[my_server_index - 1] != NULL) {
         // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
@@ -1578,18 +1576,18 @@ static int execute_like(char *update)
 
     // Check if user is the creator
     if (strcmp(username, message->creator) == 0) {
-        printf("Server: message is created by %s and cannot be liked by the creator\n", username);
+        printf("\tmessage is created by %s and cannot be liked by the creator\n", username);
         return 0;
     }
 
     // Check if the message has been liked by the user
     int num_likes = add_like(message, username);
     if (num_likes < 0) {
-        printf("Server: message has been liked by %s\n", username);
+        printf("\tmessage has been liked by %s\n", username);
         return 0;
     }
 
-    printf("Server: add like of %s to message %s in %s\n", username, message->content, room_name);
+    printf("\tadd like of %s to message %s in %s\n", username, message->content, room_name);
 
     // If the current server has participants in this room
     if (room->participants[my_server_index - 1] != NULL) {
@@ -1634,18 +1632,18 @@ static int execute_unlike(char *update)
 
     // Check if user is the creator
     if (strcmp(username, message->creator) == 0) {
-        printf("Server: message is created by %s and cannot be unliked by the creator\n", username);
+        printf("\tmessage is created by %s and cannot be unliked by the creator\n", username);
         return 0;
     }
 
     // Check if the message has been liked by the user
     int num_likes = remove_like(message, username);
     if (num_likes < 0) {
-        printf("Server: message has not been liked by %s\n", username);
+        printf("\tmessage has not been liked by %s\n", username);
         return 0;
     }
 
-    printf("Server: remove like of %s to message %s in %s\n", username, message->content, room_name);
+    printf("\tremove like of %s to message %s in %s\n", username, message->content, room_name);
     
     // If the current server has participants in this room
     if (room->participants[my_server_index - 1] != NULL) {
