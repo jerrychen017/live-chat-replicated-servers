@@ -23,6 +23,7 @@ static bool merging;
 static bool connected_servers[5];
 static int num_matrices;
 static int expected_timestamp[5];
+static struct log* like_updates; 
 
 static int my_server_index;
 
@@ -66,6 +67,7 @@ int main(int argc, char *argv[])
         }
     }
     num_matrices = 0;
+    like_updates = NULL;
 
     for (int i = 0; i < 5; i++) {
         logs[i] = NULL;
@@ -477,7 +479,12 @@ static void Read_message()
                 if (num_matrices == 0) {
                     
                     
-                    // TODO: Clear liked_updates list
+                    // Clear like_updates list
+                    while(like_updates != NULL) { 
+                        struct log * to_delete = like_updates; 
+                        like_updates = like_updates->next; 
+                        free(to_delete); 
+                    }
 
                     // Send new participant list to my server-room group, if I have clients in this room
                     struct room* cur = rooms;
@@ -770,10 +777,65 @@ static void Read_message()
                         ret = execute_append(timestamp, server_index, update);
                     }
 
-                // TODO: if the merging update is 'l' or 'r', update like_updates list
-                } else if (update[0] == 'l') {
-                    
-                } else if (update[0] == 'r') {
+                // if the merging update is 'l' or 'r', update like_updates list
+                } else if (update[0] == 'l' || update[0] == 'r') {
+                    int message_timestamp; 
+                    int message_server_index; 
+                    // update = <room_name> <timestamp of the liked message> <server_index of the liked message> <username>
+                    if (update[0] == 'l') {
+                        ret = sscanf(update, "l %s %d %d %s", room_name, &message_timestamp, &message_server_index, username);
+                    } else {
+                        ret = sscanf(update, "r %s %d %d %s", room_name, &message_timestamp, &message_server_index, username);
+                    }
+
+                    if (ret < 4) {
+                        printf("Error: fail to parse room_name, timestamp, server_index, and username from UDPATE_MERGE %s\n", message);
+                        break;
+                    }
+
+                    // Search like_updates list, and see if there is a l/r update with the same room,username, message
+                    bool replaced = false;
+
+                    struct log dummy;
+                    dummy.next = like_updates;
+                    struct log * cur = &dummy; 
+                    while(cur->next != NULL) {
+                        char node_username[80];
+                        char node_room_name[80];
+                        int node_timestamp; 
+                        int node_server_index; 
+                        if (cur->next->content[0] == 'l') {
+                            ret = sscanf(update, "l %s %d %d %s", node_room_name, &node_timestamp, &node_server_index, node_username);
+                        } else if (cur->next->content[0] == 'r') {
+                            ret = sscanf(update, "r %s %d %d %s", node_room_name, &node_timestamp, &node_server_index, node_username);
+                        } else { 
+                            printf("Error: unknown command %s in like_updates\n", cur->next->content);
+                        }
+
+                        if (strcmp(room_name, node_room_name) == 0 
+                            && strcmp(username, node_username) == 0
+                            && node_timestamp == message_timestamp
+                            && node_server_index == message_server_index) {
+                            if (timestamp > cur->next->timestamp 
+                                || (timestamp == cur->next->timestamp && server_index > cur->next->server_index)) {
+                                    cur->next->timestamp = timestamp;
+                                    cur->next->server_index = server_index;
+                                    strcpy(cur->next->content, update);
+                                    replaced = true;
+                            }
+                        }
+                        cur = cur->next;
+                    }
+
+                    if (!replaced) {
+                        struct log * new_log = malloc(sizeof(struct log));
+                        new_log->timestamp = timestamp; 
+                        new_log->server_index = server_index; 
+                        strcpy(new_log->content, update);
+                        new_log->next = NULL;
+                        cur->next = new_log;
+                    }
+                    like_updates = dummy.next; 
 
                 } else {
                     printf("Error: unknown command in UPDATE_MERGE %s\n", message);
@@ -798,10 +860,21 @@ static void Read_message()
                         printf("\n");
                     }
 
-                    /* TODO:
-                    For every update in like_updates list
-                        execute_like/execute_unlike
-                    */
+                    
+                    // execute every update in like_updates list
+                    while(like_updates != NULL) {
+                        if (like_updates->content[0] == 'l') {
+                            execute_like(like_updates->content);
+                        } else if(like_updates->content[0] == 'r') {
+                            execute_unlike(like_updates->content);
+                        } else {
+                            printf("Error: unknown command %s in like_updates list\n", like_updates->content); 
+                            break;
+                        }
+                        struct log* to_delete = like_updates; 
+                        like_updates = like_updates->next; 
+                        free(to_delete);
+                   }
 
                     // Mark as out of merging state
                     merging = false;
@@ -1477,6 +1550,8 @@ int remove_like(struct message *message, char *username)
             break;
         }
     }
+
+    message->liked_by = dummy.next;
 
     // user does not exist in the list
     if (!deleted) {
