@@ -49,5 +49,6 @@ int remove_like(struct message *message, char *username);
 void get_messages(char* to_send, struct room* room);
 void get_participants(char* to_send, struct room* room);
 int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp);
+void insert_log(struct log **updates_ref, struct log *log);
 
 #endif

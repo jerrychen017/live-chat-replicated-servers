@@ -24,7 +24,7 @@ static bool connected_servers[5];
 static int num_matrices;
 static int expected_timestamp[5];
 static bool received_highest_timestamp[5];
-static struct log* like_updates; 
+static struct log* updates; 
 
 static int my_server_index;
 
@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
         }
     }
     num_matrices = 0;
-    like_updates = NULL;
+    updates = NULL;
 
     for (int i = 0; i < 5; i++) {
         logs[i] = NULL;
@@ -161,6 +161,8 @@ int main(int argc, char *argv[])
 
         // If log file exists
         if (access(log_file_names[i], F_OK) != -1 ) {
+
+            printf("Server: read logs from log file %s\n", log_file_names[i]);
               
             log_fd[i] = fopen(log_file_names[i], "r");
             if(log_fd[i] == NULL) {
@@ -190,12 +192,37 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Execute logs in the order of lamport timestamp + process_index
+    while(updates != NULL) {
+        printf("Server: execute update from log file: %d %d %s\n", updates->timestamp, updates->server_index, updates->content);
+        if (updates->content[0] == 'a') {
+            // content = a <room_name> <username> <content>
+            ret = sscanf(updates->content, "a %s", room_name);
+            if (ret < 1) {
+                printf("Error: fail to parse room name from update %s\n", updates->content);
+            }
 
-    /* TODO:    
-    Execute logs in the order of lamport timestamp + process_index
-        update rooms, matrix and timestamp accordingly
-    */
-    
+            // Create the room if does not exist
+            struct room* room = find_room(rooms, room_name);
+            if (room == NULL) {
+                create_room(&rooms, room_name);
+            }
+
+            ret = execute_append(updates->timestamp, updates->server_index, updates->content);
+        } else if(updates->content[0] == 'l') {
+            ret = execute_like(updates->content);
+        } else if(updates->content[0] == 'r') {
+            ret = execute_unlike(updates->content);
+        } else {
+            printf("Error: unknown command %s in updates list\n", updates->content); 
+        }
+        if (ret < 0) {
+            printf("Server: fail to execute update %s\n", updates->content);
+        }
+        struct log* to_delete = updates; 
+        updates = updates->next; 
+        free(to_delete);
+    }    
     
     E_init();
     E_attach_fd(Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY);
@@ -469,11 +496,10 @@ static void Read_message()
                 // If just received expected number of matrices
                 if (num_matrices == 0) {
                     
-                    
-                    // Clear like_updates list
-                    while(like_updates != NULL) { 
-                        struct log * to_delete = like_updates; 
-                        like_updates = like_updates->next; 
+                    // Clear updates list
+                    while(updates != NULL) { 
+                        struct log * to_delete = updates; 
+                        updates = updates->next; 
                         free(to_delete); 
                     }
 
@@ -567,7 +593,7 @@ static void Read_message()
 				                    SP_error( ret );
 				                    Bye();
 			                    }
-                                printf("Server: send log for reconcilation: timestamp %d server_index %d content %s\n", cur->timestamp, cur->server_index, cur->content);
+                                printf("Server: send log for reconcilation: %d %d %s\n", cur->timestamp, cur->server_index, cur->content);
                             }
                             cur = cur->next;
                         }
@@ -598,7 +624,7 @@ static void Read_message()
                         // Execute updates received in buffer during merging
                         while (buffer != NULL) {
 
-                            printf("Server: Execute update in buffer: timestamp %d server_index %d content %s\n", buffer->timestamp, buffer->server_index, buffer->content);
+                            printf("Server: execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
 
                             ret = save_update(buffer->timestamp, buffer->server_index, buffer->content);
                             if (ret < 0) {
@@ -782,7 +808,7 @@ static void Read_message()
                         ret = execute_append(timestamp, server_index, update);
                     }
 
-                // If the merging update is 'l' or 'r', update like_updates list
+                // If the merging update is 'l' or 'r', update updates list
                 } else if (update[0] == 'l' || update[0] == 'r') {
                     int message_timestamp; 
                     int message_server_index; 
@@ -797,13 +823,14 @@ static void Read_message()
                         break;
                     }
 
-                    // Search like_updates list, and see if there is a l/r update with the same room,username, message
+                    // Search updates list, and see if there is a l/r update with the same room, username and message
                     bool processed = false;
-
                     struct log dummy;
-                    dummy.next = like_updates;
-                    struct log * cur = &dummy; 
+                    dummy.next = updates;
+                    struct log * cur = &dummy;
                     while(cur->next != NULL) {
+
+                        // Read update in cur->next
                         char node_username[80];
                         char node_room_name[80];
                         int node_timestamp; 
@@ -813,13 +840,15 @@ static void Read_message()
                         } else if (cur->next->content[0] == 'r') {
                             ret = sscanf(cur->next->content, "r %s %d %d %s", node_room_name, &node_timestamp, &node_server_index, node_username);
                         } else { 
-                            printf("Error: unknown command %s in like_updates\n", cur->next->content);
+                            printf("Error: unknown command %s in updates list\n", cur->next->content);
+                            break;
                         }
                         if (ret < 4) {
                             printf("Error: fail to parse room_name, timestamp, server_index, and username from UDPATE_MERGE %s\n", message);
                             break;
                         }
 
+                        // If cur->next is an update for same room, username and message
                         if (strcmp(room_name, node_room_name) == 0 
                             && strcmp(username, node_username) == 0
                             && node_timestamp == message_timestamp
@@ -827,40 +856,32 @@ static void Read_message()
 
                             if (timestamp > cur->next->timestamp 
                                 || (timestamp == cur->next->timestamp && server_index > cur->next->server_index)) {
-                                cur->next->timestamp = timestamp;
-                                cur->next->server_index = server_index;
-                                strcpy(cur->next->content, update);
+
+                                // delete cur->next
+                                // need to insert this log
+                                struct log *to_delete = cur->next;
+                                cur->next = cur->next->next;
+                                free(to_delete);
+                            } else {
+                                // will NOT insert this log
+                                processed = true;
                             }
-                            processed = true;
-                            break;
-
-                        } else if (cur->next->timestamp > timestamp 
-                            || (cur->next->timestamp == timestamp && cur->next->server_index > server_index)) {
-
-                            // insert between cur and cur->next
-                            struct log * new_log = malloc(sizeof(struct log));
-                            new_log->timestamp = timestamp; 
-                            new_log->server_index = server_index; 
-                            strcpy(new_log->content, update);
-                            new_log->next = cur->next;
-
-                            cur->next = new_log;
-                            processed = true;
                             break;
                         }
                         cur = cur->next;
                     }
+                    updates = dummy.next;
 
                     if (!processed) {
+                        // Insert this log in timestamp + server_index order
                         struct log * new_log = malloc(sizeof(struct log));
                         new_log->timestamp = timestamp; 
                         new_log->server_index = server_index; 
                         strcpy(new_log->content, update);
                         new_log->next = NULL;
 
-                        cur->next = new_log;
+                        insert_log(&updates, new_log);
                     }
-                    like_updates = dummy.next; 
 
                 } else {
                     printf("Error: unknown command in UPDATE_MERGE %s\n", message);
@@ -883,20 +904,20 @@ static void Read_message()
                         printf("\n");
                     }
                     
-                    // execute every update in like_updates list
-                    while(like_updates != NULL) {
-                        if (like_updates->content[0] == 'l') {
-                            execute_like(like_updates->content);
-                        } else if(like_updates->content[0] == 'r') {
-                            execute_unlike(like_updates->content);
+                    // execute every update in updates list
+                    while(updates != NULL) {
+                        printf("Server: execute like update: %d %d %s\n", updates->timestamp, updates->server_index, updates->content);
+                        if (updates->content[0] == 'l') {
+                            execute_like(updates->content);
+                        } else if(updates->content[0] == 'r') {
+                            execute_unlike(updates->content);
                         } else {
-                            printf("Error: unknown command %s in like_updates list\n", like_updates->content); 
-                            break;
+                            printf("Error: unknown command %s in updates list\n", updates->content); 
                         }
-                        struct log* to_delete = like_updates; 
-                        like_updates = like_updates->next; 
+                        struct log* to_delete = updates; 
+                        updates = updates->next; 
                         free(to_delete);
-                   }
+                    }
 
                     // Mark as out of merging state
                     merging = false;
@@ -1384,20 +1405,14 @@ static int read_log(int i)
             continue;
         }
 
-        // Append it in logs[server_index] list
+        // Insert it in updates list
         struct log* new_log = malloc(sizeof(struct log));
         new_log->timestamp = timestamp;
         new_log->server_index = server_index;
         strcpy(new_log->content, update);
         new_log->next = NULL;
 
-        if (logs[server_index - 1] == NULL) {
-            logs[server_index - 1] = new_log;
-            last_log[server_index - 1] = new_log;
-        } else {
-            last_log[server_index - 1]->next = new_log;
-            last_log[server_index - 1] = new_log;
-        }
+        insert_log(&updates, new_log);
     }
 
     free(line);
@@ -2030,4 +2045,32 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
     }
 
     return 0;
+}
+
+void insert_log(struct log **updates_ref, struct log *log)
+{
+    struct log dummy;
+    dummy.next = *updates_ref;
+    struct log *cur = &dummy;
+
+    while (cur->next != NULL) {
+        
+        if (cur->next->timestamp > log->timestamp 
+            || (cur->next->timestamp == log->timestamp && cur->next->server_index > log->server_index)) {
+
+            // insert between cur and cur->next
+            log->next = cur->next;
+            cur->next = log;
+
+            *updates_ref = dummy.next;
+            return;
+        }
+        cur = cur->next;
+    }
+
+    // append at the end of list
+    log->next = NULL;
+    cur->next = log;
+    *updates_ref = dummy.next;
+    return;
 }
