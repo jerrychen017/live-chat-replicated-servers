@@ -23,6 +23,7 @@ static bool merging;
 static bool connected_servers[5];
 static int num_matrices;
 static int expected_timestamp[5];
+static bool received_highest_timestamp[5];
 static struct log* like_updates; 
 
 static int my_server_index;
@@ -71,10 +72,10 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < 5; i++) {
         logs[i] = NULL;
-    }
-    for (int i = 0; i < 5; i++) {
         last_log[i] = NULL;
+        received_highest_timestamp[i] = false;
     }
+
     buffer = NULL; 
     end_of_buffer = NULL; 
     my_timestamp = 0;
@@ -541,6 +542,12 @@ static void Read_message()
                         }
                         expected_timestamp[j] = highest_timestamp;
 
+                        if (lowest_timestamp == highest_timestamp) {
+                            received_highest_timestamp[j] = true;
+                        } else {
+                            received_highest_timestamp[j] = false;
+                        }
+
                         /* Find the server which has the highest timestamp, and lowest server index
                             to send missing updates for this server */
                         for (i = 0; i < 5; i++) {
@@ -559,16 +566,10 @@ static void Read_message()
                             continue;
                         }
 
-                        printf("DEBUG: lowest timestamp %d\n", lowest_timestamp);
-                        printf("DEBUG: highest timestamp %d\n", highest_timestamp);
-
-
                         // Current server is responsible for sending missing updates for server j + 1
                         // Send “UPDATE_MERGE <timestamp> <server_index> <update>” to servers group with logs from lowest to highest timestamp
                         struct log* cur = logs[j];
-                        if (cur == NULL) {printf("DEBUG: log %d is NULL\n", j);}
                         while (cur != NULL) {
-                            printf("DEBUG: current timestamp %d\n", cur->timestamp);
                             if (cur->timestamp > lowest_timestamp) {
                                 sprintf(to_send, "%d %d %s", cur->timestamp, cur->server_index, cur->content);
                                 ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_MERGE, strlen(to_send), to_send);
@@ -583,18 +584,11 @@ static void Read_message()
                         
                     }
 
-                    printf("DEBUG: flag3\n");
-
                     // If the current server has all logs up to date
                     bool merging_completed = true;
-                    for (j = 0; j < 5; j++) {
-                        if (matrix[my_server_index - 1][j] != expected_timestamp[j]) {
-                            merging_completed = false;
-                            printf("DEBUG: flag4\n");
-                        }
+                    for (i = 0; i < 5; i++) {
+                        merging_completed = merging_completed && received_highest_timestamp[i];
                     }
-
-                    printf("DEBUG: flag5\n");
 
                     if (merging_completed) {
 
@@ -741,7 +735,6 @@ static void Read_message()
 
                 // If the current server has finished merging
                 if (!merging) {
-                    printf("Receive UPDATE_MERGE not during merging %s\n", message);
                     break;
                 }
 
@@ -760,6 +753,11 @@ static void Read_message()
 
                 strcpy(update, &message[num_read + 1]);
                 
+                // Check if received highest timestamp for this server 
+                if (timestamp == expected_timestamp[server_index - 1]) {
+                    received_highest_timestamp[server_index - 1] = true; 
+                }
+
                 // If update does not exist
                 bool exist = true;
                 if (timestamp > matrix[my_server_index - 1][server_index - 1]) {
@@ -777,7 +775,7 @@ static void Read_message()
                         ret = execute_append(timestamp, server_index, update);
                     }
 
-                // if the merging update is 'l' or 'r', update like_updates list
+                // If the merging update is 'l' or 'r', update like_updates list
                 } else if (update[0] == 'l' || update[0] == 'r') {
                     int message_timestamp; 
                     int message_server_index; 
@@ -844,10 +842,8 @@ static void Read_message()
 
                 // If the current server has all logs up to date
                 bool merging_completed = true;
-                for (j = 0; j < 5; j++) {
-                    if (matrix[my_server_index - 1][j] != expected_timestamp[j]) {
-                        merging_completed = false;
-                    }
+                for (i = 0; i < 5; i++) {
+                    merging_completed = merging_completed && received_highest_timestamp[i];
                 }
                 if (merging_completed) {
 
