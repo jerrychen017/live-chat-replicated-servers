@@ -54,6 +54,7 @@ static void Read_message();
 static void Bye();
 static int read_state();
 static int write_state();
+static int read_log(int i);
 static void clear();
 static int save_update(int timestamp, int server_index, char* update);
 static int execute_append(int timestamp, int server_index, char *update);
@@ -157,65 +158,35 @@ int main(int argc, char *argv[])
     }
 
     for (int i = 0; i < 5; i++) {
+
         // If log file exists
         if (access(log_file_names[i], F_OK) != -1 ) {
-            /*
-            TODO:
-            read from the line matching with the corresponding timestamp
-            save logs in memory
-            */  
-            // log_fd[i] = fopen(log_file_names[i], "r");
+              
+            log_fd[i] = fopen(log_file_names[i], "r");
+            if(log_fd[i] == NULL) {
+                printf("Error: cannot open log file %s\n", log_file_names[i]);
+                continue;
+            }
 
-            // if(log_fd[i] == NULL) {
-            //     printf("Cannot open log file %s\n", log_file_names[i]);
-            //     return -1;
-            // }
-            // FILE * fd = log_fd[i]; 
-            // char line[MAX_MESS_LEN]; 
-            // int len = 0; 
-            // int read;
+            // Read from the line matching with timestamp, and save logs in memory
+            ret = read_log(i);
+            if (ret < 0) {
+                printf("Error: fail to read log from file %s\n", log_file_names[i]);
+                // clear log list
+                while (logs[i] != NULL) {
+                    struct log *to_delete = logs[i];
+                    logs[i] = logs[i]->next;
+                    free(to_delete);
+                }
+                logs[i] = NULL;
+                last_log[i] = NULL;
+            }
 
-            // int timestamp;
-            // int server_index;
-            // char update[300];
-            // int num_read;
-            
-            // while((read = getline(&line, &len, fd)) != -1) {
-            //     ret = sscanf(line, "%d %d%n", &timestamp, &server_index, &num_read);
-            //     if (ret < 2) {
-            //         printf("Error: cannot parse timestamp and server_index when reading from file %s\n", log_file_names[i]);
-            //         break;
-            //     }
-            //     strcpy(update, &line[num_read + 1]);
-
-            //     // put update into memory if update does not exist
-            //     if (timestamp > matrix[my_server_index - 1][server_index - 1]) { 
-            //         // Append it in logs[server_index] list
-            //         struct log* new_log = malloc(sizeof(struct log));
-            //         new_log->timestamp = timestamp;
-            //         new_log->server_index = server_index;
-            //         strcpy(new_log->content, update);
-            //         new_log->next = NULL;
-
-            //         if (logs[server_index - 1] == NULL) {
-            //             logs[server_index - 1] = new_log;
-            //             last_log[server_index - 1] = new_log;
-            //         } else {
-            //             last_log[server_index - 1]->next = new_log;
-            //             last_log[server_index - 1] = new_log;
-            //         }
-
-            //         // Adopt the lamport timestamp if it is higher
-            //         if (timestamp > my_timestamp) {
-            //             my_timestamp = timestamp;
-            //         }
-
-            //         // Update matrix[my_server_index][server_index] to the new timestamp
-            //         matrix[my_server_index - 1][server_index - 1] = timestamp;
-
-            //     }
-            // }
-            // fclose(log_fd[i]);
+            ret = fclose(log_fd[i]);
+            if (ret < 0) {
+                printf("Error: fail to close log file %s\n", log_file_names[i]);
+                continue;
+            }
         }
     }
 
@@ -224,6 +195,7 @@ int main(int argc, char *argv[])
     Execute logs in the order of lamport timestamp + process_index
         update rooms, matrix and timestamp accordingly
     */
+    
     
     E_init();
     E_attach_fd(Mbox, READ_FD, Read_message, 0, NULL, HIGH_PRIORITY);
@@ -740,9 +712,9 @@ static void Read_message()
                     break;
                 }
 
-                /* TODO:
-                For every FREQ_SAVE UPDATE_NORMAL messages received
-                    Save state to state file
+                
+                /* For every FREQ_SAVE UPDATE_NORMAL messages received,
+                    save state to state file
                 */
                 if (num_update_normal == FREQ_SAVE) {
                     num_update_normal = 0;
@@ -1381,6 +1353,57 @@ static int write_state() {
     return 0;
 }
 
+static int read_log(int i)
+{
+    char *line = malloc(MAX_MESS_LEN);
+    size_t length = MAX_MESS_LEN;
+    int ret;
+
+    int timestamp;
+    int server_index;
+    char update[300];
+    int num_read;
+            
+    while((ret = getline(&line, &length, log_fd[i])) != -1) {
+        // line = <timestamp> <server_index> <update>
+        ret = sscanf(line, "%d %d%n", &timestamp, &server_index, &num_read);
+        if (ret < 2) {
+            printf("Error: cannot parse timestamp and server_index when reading from line %s\n", line);
+            free(line);
+            return -1;
+        }
+        strcpy(update, &line[num_read + 1]);
+
+        if (server_index != i + 1) {
+            printf("Warning: log file server%d-log%d.out has updates for server%d\n", my_server_index, i + 1, server_index);
+            continue;
+        }
+
+        // Read log from the current timestamp
+        if (timestamp <= matrix[my_server_index - 1][server_index - 1]) {
+            continue;
+        }
+
+        // Append it in logs[server_index] list
+        struct log* new_log = malloc(sizeof(struct log));
+        new_log->timestamp = timestamp;
+        new_log->server_index = server_index;
+        strcpy(new_log->content, update);
+        new_log->next = NULL;
+
+        if (logs[server_index - 1] == NULL) {
+            logs[server_index - 1] = new_log;
+            last_log[server_index - 1] = new_log;
+        } else {
+            last_log[server_index - 1]->next = new_log;
+            last_log[server_index - 1] = new_log;
+        }
+    }
+
+    free(line);
+    return 0;
+}
+
 static void clear()
 {
     // delete rooms list
@@ -1436,6 +1459,7 @@ static int save_update(int timestamp, int server_index, char* update)
 
     // Write update to “server[my_server_index]-log[server_index].out” file
     log_fd[server_index - 1] = fopen(log_file_names[server_index - 1], "a+");
+    // Write <timestamp> <server_index> <log content>
     ret = fprintf(log_fd[server_index - 1], "%d %d %s\n", timestamp, server_index, update);
     if (ret < 0) {
         printf("Error: fail to write update %s to file %s\n", update, log_file_names[server_index - 1]);
