@@ -785,7 +785,6 @@ static void Read_message()
                     } else {
                         ret = sscanf(update, "r %s %d %d %s", room_name, &message_timestamp, &message_server_index, username);
                     }
-
                     if (ret < 4) {
                         printf("Error: fail to parse room_name, timestamp, server_index, and username from UDPATE_MERGE %s\n", message);
                         break;
@@ -809,7 +808,6 @@ static void Read_message()
                         } else { 
                             printf("Error: unknown command %s in like_updates\n", cur->next->content);
                         }
-
                         if (ret < 4) {
                             printf("Error: fail to parse room_name, timestamp, server_index, and username from UDPATE_MERGE %s\n", message);
                             break;
@@ -822,9 +820,9 @@ static void Read_message()
 
                             if (timestamp > cur->next->timestamp 
                                 || (timestamp == cur->next->timestamp && server_index > cur->next->server_index)) {
-                                    cur->next->timestamp = timestamp;
-                                    cur->next->server_index = server_index;
-                                    strcpy(cur->next->content, update);
+                                cur->next->timestamp = timestamp;
+                                cur->next->server_index = server_index;
+                                strcpy(cur->next->content, update);
                             }
                             processed = true;
                             break;
@@ -877,7 +875,6 @@ static void Read_message()
                         }
                         printf("\n");
                     }
-
                     
                     // execute every update in like_updates list
                     while(like_updates != NULL) {
@@ -901,7 +898,7 @@ static void Read_message()
                     // Execute updates received in buffer during merging
                     while (buffer != NULL) {
 
-                        printf("Server: Execute update in buffer: timestamp %d server_index %d content %s\n", buffer->timestamp, buffer->server_index, buffer->content);
+                        printf("Server: execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
                         
                         ret = save_update(buffer->timestamp, buffer->server_index, buffer->content);
                         if (ret < 0) {
@@ -933,10 +930,24 @@ static void Read_message()
                 
                 break; 
             }
+
+            case VIEW:
+            {
+                // Send “VIEW <5 numbers 0/1>” to the client’s private group
+                sprintf(to_send, "%d %d %d %d %d", connected_servers[0], connected_servers[1],
+                    connected_servers[2], connected_servers[3], connected_servers[4]);
+                ret = SP_multicast(Mbox, AGREED_MESS, sender, VIEW, strlen(to_send), to_send);
+                if (ret < 0) {
+                    SP_error(ret);
+                    Bye();
+                }
+                break;
+            }
             
             default:
             {
                 printf("Warning: receive unknown message type\n");
+                break;
             }
         }
 
