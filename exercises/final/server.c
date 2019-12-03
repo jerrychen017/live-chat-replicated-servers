@@ -803,11 +803,16 @@ static void Read_message()
                         int node_timestamp; 
                         int node_server_index; 
                         if (cur->next->content[0] == 'l') {
-                            ret = sscanf(update, "l %s %d %d %s", node_room_name, &node_timestamp, &node_server_index, node_username);
+                            ret = sscanf(cur->next->content, "l %s %d %d %s", node_room_name, &node_timestamp, &node_server_index, node_username);
                         } else if (cur->next->content[0] == 'r') {
-                            ret = sscanf(update, "r %s %d %d %s", node_room_name, &node_timestamp, &node_server_index, node_username);
+                            ret = sscanf(cur->next->content, "r %s %d %d %s", node_room_name, &node_timestamp, &node_server_index, node_username);
                         } else { 
                             printf("Error: unknown command %s in like_updates\n", cur->next->content);
+                        }
+
+                        if (ret < 4) {
+                            printf("Error: fail to parse room_name, timestamp, server_index, and username from UDPATE_MERGE %s\n", message);
+                            break;
                         }
 
                         if (strcmp(room_name, node_room_name) == 0 
