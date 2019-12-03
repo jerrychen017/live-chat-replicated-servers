@@ -1362,6 +1362,7 @@ static int write_state() {
     }
 
     fclose(state_fd); 
+    return 0;
 }
 
 static void clear()
