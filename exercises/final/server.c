@@ -745,74 +745,10 @@ static void Read_message()
                 */
                if (num_update_normal == FREQ_SAVE) {
                     num_update_normal = 0;
-                    state_fd = fopen(state_file_name, "w");
-                    // 5 lamport timestamps
-                    for (int i = 0; i < 5; i++) {
-                        ret = fprintf(state_fd, "%d ", matrix[my_server_index - 1][i]);
-                        if (ret < 0) {
-                            printf("Error: fail to write to state file %s\n", state_file_name);
-                            break;
-                        }
-                    }
-                    
-                    struct room* cur_room = rooms;
-                    int num_rooms = 0;
-                    while(cur_room != NULL) {
-                        num_rooms++;
-                        cur_room = cur_room->next;
-                    }
-                    // <num_rooms>
-                    ret = fprintf(state_fd, "\n%d\n", num_rooms);
+                    ret = write_state(); 
                     if (ret < 0) {
-                        printf("Error: fail to write to state file %s\n", state_file_name);
-                        break;
+                        exit(1);
                     }
-
-                    cur_room = rooms;
-                    while(cur_room != NULL) {
-                        int num_messages = 0;
-                        struct message* cur_message = cur_room->messages;
-                        while(cur_message != NULL) {
-                            num_messages++; 
-                            cur_message = cur_message->next; 
-                        }
-                        // <room_name> <num_messages>
-                        ret = fprintf(state_fd, "%s %d\n", cur_room->name, num_messages);
-                        if (ret < 0) {
-                            printf("Error: fail to write to state file %s\n", state_file_name);
-                            break;
-                        }
-
-                        cur_message = cur_room->messages;
-                        // message = <timestamp> <server_index> <creator> <content> <liked_by>	
-                        while(cur_message != NULL) {
-                            ret = fprintf(state_fd, "%d %d %s %s ", cur_message->timestamp, cur_message->server_index, cur_message->creator, cur_message->content);
-                            if (ret < 0) {
-                                printf("Error: fail to write to state file %s\n", state_file_name);
-                                break;
-                            }
-                            struct participant* cur_liked_by = cur_message->liked_by;
-                            while(cur_liked_by != NULL) {
-                                ret = fprintf(state_fd, "%s ", cur_liked_by->name);
-                                if (ret < 0) {
-                                    printf("Error: fail to write to state file %s\n", state_file_name);
-                                    break;
-                                }
-                                cur_liked_by = cur_liked_by->next;
-                            }
-
-                            ret = fprintf(state_fd, "\n");
-                            if (ret < 0) {
-                                printf("Error: fail to write to state file %s\n", state_file_name);
-                                break;
-                            }
-
-                            cur_message = cur_message->next; 
-                        }
-                        cur_room = cur_room->next;
-                    }
-
-                    fclose(state_fd); 
                }
 
 
@@ -1354,6 +1290,77 @@ static int read_state(FILE* state_fd)
 
     free(line);
     return 0;
+}
+
+static int write_state() {
+    int ret; 
+    state_fd = fopen(state_file_name, "w");
+    // 5 lamport timestamps
+    for (int i = 0; i < 5; i++) {
+        ret = fprintf(state_fd, "%d ", matrix[my_server_index - 1][i]);
+        if (ret < 0) {
+            return -1;
+        }
+    }
+                    
+    struct room* cur_room = rooms;
+    int num_rooms = 0;
+    while(cur_room != NULL) {
+        num_rooms++;
+        cur_room = cur_room->next;
+    }
+    // <num_rooms>
+    ret = fprintf(state_fd, "\n%d\n", num_rooms);
+    if (ret < 0) {
+        printf("Error: fail to write to state file %s\n", state_file_name);
+        return -1;
+    }
+
+    cur_room = rooms;
+    while(cur_room != NULL) {
+        int num_messages = 0;
+        struct message* cur_message = cur_room->messages;
+        while(cur_message != NULL) {
+            num_messages++; 
+            cur_message = cur_message->next; 
+        }
+        // <room_name> <num_messages>
+        ret = fprintf(state_fd, "%s %d\n", cur_room->name, num_messages);
+        if (ret < 0) {
+            printf("Error: fail to write to state file %s\n", state_file_name);
+            return -1;
+        }
+
+        cur_message = cur_room->messages;
+        // message = <timestamp> <server_index> <creator> <content> <liked_by>	
+        while(cur_message != NULL) {
+            ret = fprintf(state_fd, "%d %d %s %s ", cur_message->timestamp, cur_message->server_index, cur_message->creator, cur_message->content);
+            if (ret < 0) {
+                printf("Error: fail to write to state file %s\n", state_file_name);
+                return -1;
+            }
+            struct participant* cur_liked_by = cur_message->liked_by;
+            while(cur_liked_by != NULL) {
+                ret = fprintf(state_fd, "%s ", cur_liked_by->name);
+                if (ret < 0) {
+                    printf("Error: fail to write to state file %s\n", state_file_name);
+                    return -1;
+                }
+                cur_liked_by = cur_liked_by->next;
+            }
+
+            ret = fprintf(state_fd, "\n");
+            if (ret < 0) {
+                printf("Error: fail to write to state file %s\n", state_file_name);
+                return -1;
+            }
+
+            cur_message = cur_message->next; 
+        }
+        cur_room = cur_room->next;
+    }
+
+    fclose(state_fd); 
 }
 
 static void clear()
