@@ -792,7 +792,7 @@ static void Read_message()
                     }
 
                     // Search like_updates list, and see if there is a l/r update with the same room,username, message
-                    bool replaced = false;
+                    bool processed = false;
 
                     struct log dummy;
                     dummy.next = like_updates;
@@ -814,23 +814,40 @@ static void Read_message()
                             && strcmp(username, node_username) == 0
                             && node_timestamp == message_timestamp
                             && node_server_index == message_server_index) {
+
                             if (timestamp > cur->next->timestamp 
                                 || (timestamp == cur->next->timestamp && server_index > cur->next->server_index)) {
                                     cur->next->timestamp = timestamp;
                                     cur->next->server_index = server_index;
                                     strcpy(cur->next->content, update);
-                                    replaced = true;
                             }
+                            processed = true;
+                            break;
+
+                        } else if (cur->next->timestamp > timestamp 
+                            || (cur->next->timestamp == timestamp && cur->next->server_index > server_index)) {
+
+                            // insert between cur and cur->next
+                            struct log * new_log = malloc(sizeof(struct log));
+                            new_log->timestamp = timestamp; 
+                            new_log->server_index = server_index; 
+                            strcpy(new_log->content, update);
+                            new_log->next = cur->next;
+
+                            cur->next = new_log;
+                            processed = true;
+                            break;
                         }
                         cur = cur->next;
                     }
 
-                    if (!replaced) {
+                    if (!processed) {
                         struct log * new_log = malloc(sizeof(struct log));
                         new_log->timestamp = timestamp; 
                         new_log->server_index = server_index; 
                         strcpy(new_log->content, update);
                         new_log->next = NULL;
+
                         cur->next = new_log;
                     }
                     like_updates = dummy.next; 
