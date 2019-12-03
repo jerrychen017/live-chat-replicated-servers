@@ -53,6 +53,7 @@ static int num_update_normal;
 static void Read_message();
 static void Bye();
 static int read_state(FILE* state_fd);
+static int write_state();
 static void clear();
 static int save_update(int timestamp, int server_index, char* update);
 static int execute_append(int timestamp, int server_index, char *update);
