@@ -56,7 +56,7 @@ static int read_state();
 static int write_state();
 static int read_log(int i);
 static void clear();
-static int save_update(int timestamp, int server_index, char* update);
+static int save_update(int timestamp, int server_index, char* update, bool write_to_file);
 static int execute_append(int timestamp, int server_index, char *update);
 static int execute_like(char *update);
 static int execute_unlike(char *update);
@@ -197,7 +197,7 @@ int main(int argc, char *argv[])
 
         printf("Server: execute update from log file: %d %d %s\n", updates->timestamp, updates->server_index, updates->content);
 
-        ret = save_update(updates->timestamp, updates->server_index, updates->content);
+        ret = save_update(updates->timestamp, updates->server_index, updates->content, false);
         if (ret < 0) {
             printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
         }
@@ -633,7 +633,7 @@ static void Read_message()
 
                             printf("Server: execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
 
-                            ret = save_update(buffer->timestamp, buffer->server_index, buffer->content);
+                            ret = save_update(buffer->timestamp, buffer->server_index, buffer->content, true);
                             if (ret < 0) {
                                 printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
                             }
@@ -723,7 +723,7 @@ static void Read_message()
                 }
 
                 // Save the update to file, memory and update timestamp & matrix accordingly
-                ret = save_update(timestamp, server_index, update);
+                ret = save_update(timestamp, server_index, update, true);
                 if (ret < 0) {
                     printf("Error: fail to save update from UPDATE_NORMAL %s\n", message);
                     break;
@@ -802,7 +802,7 @@ static void Read_message()
                 bool exist = true;
                 if (timestamp > matrix[my_server_index - 1][server_index - 1]) {
                     exist = false;
-                    ret = save_update(timestamp, server_index, update);
+                    ret = save_update(timestamp, server_index, update, true);
                     if (ret < 0) {
                         printf("Error: fail to save update from UPDATE_MERGE %s\n", message);
                         break;
@@ -935,7 +935,7 @@ static void Read_message()
 
                         printf("Server: execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
                         
-                        ret = save_update(buffer->timestamp, buffer->server_index, buffer->content);
+                        ret = save_update(buffer->timestamp, buffer->server_index, buffer->content, true);
                         if (ret < 0) {
                             printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
                         }
@@ -1393,7 +1393,7 @@ static int read_log(int i)
     while((ret = getline(&line, &length, log_fd[i])) != -1) {
         // line = <timestamp> <server_index> <update>
         ret = sscanf(line, "%d %d %[^\n]\n", &timestamp, &server_index, update);
-        if (ret < 2) {
+        if (ret < 3) {
             printf("Error: cannot parse timestamp and server_index when reading from line %s\n", line);
             free(line);
             return -1;
@@ -1472,19 +1472,21 @@ static void clear()
     my_timestamp = 0;
 }
 
-static int save_update(int timestamp, int server_index, char* update)
+static int save_update(int timestamp, int server_index, char* update, bool write_to_file)
 {
     int ret;
 
-    // Write update to “server[my_server_index]-log[server_index].out” file
-    log_fd[server_index - 1] = fopen(log_file_names[server_index - 1], "a+");
-    // Write <timestamp> <server_index> <log content>
-    ret = fprintf(log_fd[server_index - 1], "%d %d %s\n", timestamp, server_index, update);
-    if (ret < 0) {
-        printf("Error: fail to write update %s to file %s\n", update, log_file_names[server_index - 1]);
-        return -1;
+    if (write_to_file) {
+        // Write update to “server[my_server_index]-log[server_index].out” file
+        log_fd[server_index - 1] = fopen(log_file_names[server_index - 1], "a+");
+        // Write <timestamp> <server_index> <log content>
+        ret = fprintf(log_fd[server_index - 1], "%d %d %s\n", timestamp, server_index, update);
+        if (ret < 0) {
+            printf("Error: fail to write update %s to file %s\n", update, log_file_names[server_index - 1]);
+            return -1;
+        }
+        fclose(log_fd[server_index - 1]);
     }
-    fclose(log_fd[server_index - 1]);
 
     // Append it in logs[server_index] list
     struct log* new_log = malloc(sizeof(struct log));
