@@ -2030,7 +2030,7 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
     }
 
     if (*logs_ref == NULL || *last_log_ref == NULL) {
-        return -1;
+        return 0;
     }
 
     struct log *cur = *logs_ref;
