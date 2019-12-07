@@ -425,18 +425,20 @@ static void Read_message()
                     printf("Error: cannot parse 5 integers from START %s\n", message);
                     break;
                 }
-                bool can_start = false;
+
+                // Check if 5 integers match with connected_servers array
+                bool same = true;
                 for (int i = 0; i < 5; i++) {
-                    if (connected_servers[i] && alive_servers[i]) {
-                        can_start = true;
-                        break; 
+                    if (connected_servers[i] != alive_servers[i]) {
+                        same = false;
+                        break;
                     }
                 }
-                if (can_start) {
-                    received_start = true; 
-                } else {
+                if (!same) {
                     break;
                 }
+
+                received_start = true;
 
                 struct room* cur = rooms;
                 while (cur != NULL) {
@@ -461,7 +463,7 @@ static void Read_message()
                     sprintf(to_send, "%s %d %s", cur->name, my_server_index, clients);
                     ret = SP_multicast(Mbox, AGREED_MESS, servers_group, PARTICIPANTS_SERVER, strlen(to_send), to_send);
                     if (ret < 0) {
-				        SP_error( ret );
+				        SP_error(ret);
 				        Bye();
 			        }
                     cur = cur->next;
@@ -484,8 +486,7 @@ static void Read_message()
 			        Bye();
 		        }
 
-                // Mark received_matrix[server_index] as false if the server 
-                // is in the network component; else mark as true
+                // Initialize received_matrix[i] to false if server is in the current network component
                 for (i = 0; i < 5; i++) {
                     if (connected_servers[i]) {
                         received_matrix[i] = false; 
@@ -493,14 +494,16 @@ static void Read_message()
                         received_matrix[i] = true; 
                     }
                 }
+
                 num_updates = 0;
+                
                 break;
             }
 
             case PARTICIPANTS_SERVER:
             {
                 printf("Receive PARTICIPANTS_SERVER from server %s\n", sender);
-                // message = <room_name> <server_index> <client1> <client2> \n...
+                // message = <room_name> <server_index> <client1> <client2> ...
 
                 if (!merging) {
                     printf("Warning: receive PARTICIPANTS_SERVER not in merging state\n");
@@ -522,8 +525,6 @@ static void Read_message()
                 if (server_index == my_server_index) {
                     break;
                 }
-
-                printf("Server: server%d has clients in %s\n", server_index, room_name);
 
                 // Create the room if it does exist in the rooms list
                 struct room* room = find_room(rooms, room_name);
@@ -588,6 +589,7 @@ static void Read_message()
                 }
                 if (counter != 25) {
                     printf("Error: did not receive 25 integers in MATRIX %s\n", message);
+                    break;
                 }
 
                 // Adopt all integers if it is higher, except for line matrix[my_server_index]
@@ -603,17 +605,16 @@ static void Read_message()
                     }
                 }
 
-                //parse server_index from sender
+                // Parse server_index from sender
                 int server_index; 
-                int ugrad_index; 
-                ret = sscanf(sender, "#server%d#ugrad%d", &server_index, &ugrad_index); 
-                if (ret < 2) {
-                    printf("Error: could not parse server_index and urgad_index from MATRIX sender\n");
+                ret = sscanf(sender, "#server%d#ugrad%*d", &server_index); 
+                if (ret < 1) {
+                    printf("Error: cannot parse server_index from sender %s\n", sender);
                     break;
                 }
                 received_matrix[server_index - 1] = true; 
 
-
+                // Check if has received all matrices
                 bool all_received = true; 
                 for (i = 0; i < 5; i++) {
                     if (connected_servers[i] && !received_matrix[i]) {
@@ -621,6 +622,7 @@ static void Read_message()
                         break;
                     } 
                 }
+
                 // If just received expected number of matrices
                 if (all_received) {
                     // Clear updates list
@@ -655,7 +657,6 @@ static void Read_message()
                             }
                         }
 
-
                         ret = clear_log(&logs[j], &last_log[j], lowest_index);
                         if (ret < 0) {
                             printf("Error: fail to clear logs[%d] up to index %d\n", j, lowest_index);
@@ -684,9 +685,8 @@ static void Read_message()
                             } 
                         }
                         
-                        for (int i = lowest_index; i < highest_index; i++) {
-                            num_updates++; 
-                        }
+                        // Calculate num_updates expected to receive
+                        num_updates += highest_index - lowest_index;
 
                         if (server_index != my_server_index) {
                             continue;
@@ -702,7 +702,8 @@ static void Read_message()
                         int num_sent = 0;
                         while (cur != NULL) {
                             if (cur->index > lowest_index) {
-                                if (num_sent < INIT_SEND_SIZE) { // send INIT_SEND_SIZE updates to servers group
+                                // Only send INIT_SEND_SIZE updates
+                                if (num_sent < INIT_SEND_SIZE) {
                                     sprintf(to_send, "%d %d %d %s", cur->counter, cur->server_index, cur->index, cur->content);
                                     ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_MERGE, strlen(to_send), to_send);
                                     if (ret < 0) {
@@ -717,7 +718,6 @@ static void Read_message()
                             }
                             cur = cur->next;
                         }
-                        
                     }
 
                     // if no updates to merge
@@ -881,11 +881,12 @@ static void Read_message()
             case UPDATE_MERGE:
             {
                 printf("Receive UPDATE_MERGE %s\n", message);
-                // message = <counter> <server_index> <update>
+                // message = <counter> <server_index> <index> <update>
 
                 if (!merging) {
                     printf("Warning: receive MATRIX not in merging state\n");
                 }
+
                 if (!received_start) {
                     break;
                 }
@@ -904,30 +905,31 @@ static void Read_message()
 
                 ret = sscanf(message, "%d %d %d%n", &counter, &server_index, &index, &num_read);
                 if (ret < 2) {
-                    printf("Error: cannot parse counter and server_index from UPDATE_MERGE %s\n", message);
+                    printf("Error: cannot parse counter, server_index and index from UPDATE_MERGE %s\n", message);
                     break;
                 }
 
                 strcpy(update, &message[num_read + 1]);
 
-                //parse server_index from sender
+                // Parse server_index from sender
                 int sender_server_index; 
-                int sender_ugrad_index; 
-                ret = sscanf(sender, "#server%d#ugrad%d", &sender_server_index, &sender_ugrad_index); 
-                if (ret < 2) {
-                    printf("Error: could not parse server_index and urgad_index from MATRIX sender\n");
+                ret = sscanf(sender, "#server%d#ugrad%*d", &sender_server_index); 
+                if (ret < 1) {
+                    printf("Error: could not parse server_index from sender %s\n", sender);
                     break;
                 }
                 
                 // If update is sent from myself
                 if (sender_server_index == my_server_index) {
-                    // If index has not reached matrix[my_server_index][server_index]
+
+                    // If I have not sent all missing logs
                     if (index < matrix[my_server_index - 1][server_index - 1]) {
-                        // Send one more update to servers group in format of “UPDATE_MERGE <counter> <server_index> <index> <update>”
+
+                        // Send one more update to servers group
                         struct log* cur = logs[server_index - 1];
-                        int num_sent = 0;
                         while (cur != NULL) {
                             if (cur->index == index + 1) {
+                                // Send “UPDATE_MERGE <counter> <server_index> <index> <update>”
                                 sprintf(to_send, "%d %d %d %s", cur->counter, cur->server_index, cur->index, cur->content);
                                 ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_MERGE, strlen(to_send), to_send);
                                 if (ret < 0) {
@@ -935,7 +937,7 @@ static void Read_message()
 				                    Bye();
 			                    }
                                 printf("Server: send log for reconcilation: %d %d %d %s\n", cur->counter, cur->server_index, cur->index, cur->content);
-                                num_sent++; 
+                                break;
                             }
                             cur = cur->next;
                         }
@@ -943,100 +945,16 @@ static void Read_message()
                 }
 
                 // If update does not exist
-                bool exist = true;
                 if (index > matrix[my_server_index - 1][server_index - 1]) {
-                    exist = false;
-                    ret = save_update(counter, server_index, update, true);
-                    if (ret < 0) {
-                        printf("Error: fail to save update from UPDATE_MERGE %s\n", message);
-                        break;
-                    }
-                }
+                    struct log *new_log = malloc(sizeof(struct log));
+                    new_log->counter = counter;
+                    new_log->server_index = server_index;
+                    new_log->index = index;
+                    strcpy(new_log->content, update);
+                    new_log->next = NULL;
 
-                if (update[0] == 'a') {
-                    // If it is a new append update, i.e does not exist before
-                    if (!exist) {
-                        ret = execute_append(counter, server_index, update);
-                    }
-
-                // If the merging update is 'l' or 'r', update updates list
-                } else if (update[0] == 'l' || update[0] == 'r') {
-                    int message_counter; 
-                    int message_server_index; 
-                    // update = <room_name> <counter of the liked message> <server_index of the liked message> <username>
-                    if (update[0] == 'l') {
-                        ret = sscanf(update, "l %s %d %d %s", room_name, &message_counter, &message_server_index, username);
-                    } else {
-                        ret = sscanf(update, "r %s %d %d %s", room_name, &message_counter, &message_server_index, username);
-                    }
-                    if (ret < 4) {
-                        printf("Error: fail to parse room_name, counter, server_index, and username from UDPATE_MERGE %s\n", message);
-                        break;
-                    }
-
-                    // Search updates list, and see if there is a l/r update with the same room, username and message
-                    bool processed = false;
-                    struct log dummy;
-                    dummy.next = updates;
-                    struct log * cur = &dummy;
-                    while(cur->next != NULL) {
-
-                        // Read update in cur->next
-                        char node_username[80];
-                        char node_room_name[80];
-                        int node_counter; 
-                        int node_server_index; 
-                        if (cur->next->content[0] == 'l') {
-                            ret = sscanf(cur->next->content, "l %s %d %d %s", node_room_name, &node_counter, &node_server_index, node_username);
-                        } else if (cur->next->content[0] == 'r') {
-                            ret = sscanf(cur->next->content, "r %s %d %d %s", node_room_name, &node_counter, &node_server_index, node_username);
-                        } else { 
-                            printf("Error: unknown command %s in updates list\n", cur->next->content);
-                            break;
-                        }
-                        if (ret < 4) {
-                            printf("Error: fail to parse room_name, counter, server_index, and username from UDPATE_MERGE %s\n", message);
-                            break;
-                        }
-
-                        // If cur->next is an update for same room, username and message
-                        if (strcmp(room_name, node_room_name) == 0 
-                            && strcmp(username, node_username) == 0
-                            && node_counter == message_counter
-                            && node_server_index == message_server_index) {
-
-                            if (counter > cur->next->counter 
-                                || (counter == cur->next->counter && server_index > cur->next->server_index)) {
-
-                                // delete cur->next
-                                // need to insert this log
-                                struct log *to_delete = cur->next;
-                                cur->next = cur->next->next;
-                                free(to_delete);
-                            } else {
-                                // will NOT insert this log
-                                processed = true;
-                            }
-                            break;
-                        }
-                        cur = cur->next;
-                    }
-                    updates = dummy.next;
-
-                    if (!processed) {
-                        // Insert this log in counter + server_index order
-                        struct log * new_log = malloc(sizeof(struct log));
-                        new_log->counter = counter; 
-                        new_log->server_index = server_index; 
-                        strcpy(new_log->content, update);
-                        new_log->next = NULL;
-
-                        insert_log(&updates, new_log);
-                    }
-
-                } else {
-                    printf("Error: unknown command in UPDATE_MERGE %s\n", message);
-                    break;
+                    // Insert it in updates list in the order of counter+server_index
+                    insert_log(&updates, new_log);
                 }
 
                 // if received all missing updates
@@ -1053,12 +971,13 @@ static void Read_message()
                     
                     // execute every update in updates list
                     while(updates != NULL) {
-                        // TODO: write it to log file, Append it to logs[server_index] list, Adopt the counter if it is higher
-                        // Update matrix[my_server_index][server_index] to the new index. 
-                        // call updated helpfer function save_update(...)
 
-                        printf("Server: execute like update: %d %d %s\n", updates->counter, updates->server_index, updates->content);
-                        if (updates->content[0] == 'l') {
+                        // TODO: save_update(...)
+
+                        printf("Server: execute update during merge: %d %d %d %s\n", updates->counter, updates->server_index, updates->index, updates->content);
+                        if (updates->content[0] == 'a') {
+                            execute_append(updates->content);
+                        } else if (updates->content[0] == 'l') {
                             execute_like(updates->content);
                         } else if(updates->content[0] == 'r') {
                             execute_unlike(updates->content);
@@ -1235,7 +1154,7 @@ static void Read_message()
                 printf("Server: current network component has\n");
 
                 int server_index;
-                for( i=0; i < num_groups; i++ ) {
+                for (i = 0; i < num_groups; i++) {
                     printf("\t%s\n", &target_groups[i][0]);
                     ret = sscanf(&target_groups[i][0], "#server%d#ugrad%*d", &server_index);
                     if (ret < 1) {
@@ -1246,7 +1165,7 @@ static void Read_message()
                 }
 
                 // If I have the lowest server_index in the current network component, send “START <5 integers 0/1>”
-                int lowest_server_index; 
+                int lowest_server_index;
                 for (int i = 0; i < 5; i++) {
                     if (connected_servers[i]) {
                         lowest_server_index = i + 1; 
@@ -1254,14 +1173,9 @@ static void Read_message()
                     }
                 }
                 if (lowest_server_index == my_server_index) {
-                    // Construct "START <5 integers 0/1>"
-                    to_send[0] = '\0';
-                    char temp[10];
-                    for (i = 0; i < 5; i++) {   
-                        sprintf(temp, "%d", connected_servers[i]);
-                        strcat(to_send, temp);
-                        strcat(to_send, " ");
-                    }
+                    // Send "START <5 integers 0/1>"
+                    sprintf(to_send, "%d %d %d %d %d", connected_servers[0], connected_servers[1],
+                        connected_servers[2], connected_servers[3], connected_servers[4]);
                     
                     ret = SP_multicast(Mbox, AGREED_MESS, servers_group, START, strlen(to_send), to_send);
                     if (ret < 0) {
@@ -1269,7 +1183,6 @@ static void Read_message()
 				        Bye();
 			        }
                 }
-
                 
             }
 
