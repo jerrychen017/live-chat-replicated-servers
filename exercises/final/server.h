@@ -14,17 +14,26 @@ struct participant {
 };
 
 struct message {
-    int timestamp;
+    int counter;
     int server_index;
     char content[81];
     char creator[80];
-    struct participant* liked_by;   // username, instead of client name
+    struct like* likes;
     struct message* next;
 };
 
-struct log {
-    int timestamp;
+struct like {
+    char username[80];
+    bool liked;
+    int counter;
     int server_index;
+    struct like *next;
+};
+
+struct log {
+    int counter;
+    int server_index;
+    int index;
     char content[300];
     struct log* next;
 };
@@ -38,14 +47,8 @@ int add_client(struct room* room, char* client_name, int server_index);
 int remove_client(struct room* room, char* client_name, int server_index);
 int insert_message(struct room* room, struct message* message);
 struct message* find_message(struct room *room, int timestamp, int server_index);
-/*
-    Add usernmae to message's liked_by list
-    Return -2 if message is null
-    Return -1 if user has already liked the message
-    Return updated # of likes if succesfully add a like
-*/
-int add_like(struct message *message, char* username);
-int remove_like(struct message *message, char *username);
+int get_num_likes(struct message *message);
+int add_like(struct message *message, char* username, bool liked, int counter, int server_index);
 void get_messages(char* to_send, struct room* room);
 void get_participants(char* to_send, struct room* room);
 int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp);

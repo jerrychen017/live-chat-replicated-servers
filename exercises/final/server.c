@@ -36,7 +36,8 @@ static char client_name[MAX_GROUP_NAME];
 static struct room *rooms;
 
 static int matrix[5][5];
-static int my_timestamp; 
+static int my_counter;
+static int my_index;
 
 static char log_file_names[5][30];
 
@@ -56,10 +57,10 @@ static int read_state();
 static int write_state();
 static int read_log(int i);
 static void clear();
-static int save_update(int timestamp, int server_index, char* update, bool write_to_file);
-static int execute_append(int timestamp, int server_index, char *update);
-static int execute_like(char *update);
-static int execute_unlike(char *update);
+static int save_update(int counter, int server_index, int index, char* update, bool write_to_file);
+static int execute_append(int counter, int server_index, char *update);
+static int execute_like(int counter, int server_index, char *update);
+static int execute_unlike(int counter, int server_index, char *update);
 
 // TODO: make sure one server index is used exactly once
 
@@ -83,7 +84,8 @@ int main(int argc, char *argv[])
 
     buffer = NULL; 
     end_of_buffer = NULL; 
-    my_timestamp = 0;
+    my_counter = 0;
+    my_index = 0;
     num_update_normal = 0;
 
     int	ret;
@@ -146,7 +148,7 @@ int main(int argc, char *argv[])
         ret = read_state(state_fd);
         if (ret < 0) {
             // fail to read from state file
-            // clear data structures and set matrix and timestamp to 0
+            // clear data structures and set matrix, counter and index to 0
             clear();
         }
 
@@ -192,14 +194,16 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Execute logs in the order of lamport timestamp + process_index
+    // Execute logs in the order of counter + server_index
     while(updates != NULL) {
 
-        printf("Server: execute update from log file: %d %d %s\n", updates->timestamp, updates->server_index, updates->content);
+        printf("Server: execute update from log file: %d %d %d %s\n", updates->counter, updates->server_index, updates->index, updates->content);
 
-        ret = save_update(updates->timestamp, updates->server_index, updates->content, false);
+        // TODO: move around node instead of free and recreate
+        ret = save_update(updates->counter, updates->server_index, updates->index, updates->content, false);
         if (ret < 0) {
-            printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
+            printf("Error: fail to save update read from file: %d %d %d %s\n", updates->counter, updates->server_index, updates->index, updates->content);
+            continue;
         }
                         
         if (updates->content[0] == 'a') {
@@ -215,17 +219,18 @@ int main(int argc, char *argv[])
                 create_room(&rooms, room_name);
             }
 
-            ret = execute_append(updates->timestamp, updates->server_index, updates->content);
+            ret = execute_append(updates->counter, updates->server_index, updates->content);
         } else if(updates->content[0] == 'l') {
-            ret = execute_like(updates->content);
+            ret = execute_like(updates->counter, updates->server_index, updates->content);
         } else if(updates->content[0] == 'r') {
-            ret = execute_unlike(updates->content);
+            ret = execute_unlike(updates->counter, updates->server_index, updates->content);
         } else {
             printf("Error: unknown command %s in updates list\n", updates->content); 
         }
         if (ret < 0) {
             printf("Server: fail to execute update %s\n", updates->content);
         }
+
         struct log* to_delete = updates; 
         updates = updates->next; 
         free(to_delete);
@@ -669,13 +674,27 @@ static void Read_message()
             {
                 // message = <update>
 
-                // increment lamport timestamp
-                my_timestamp++;
+                // TODO: If in merging state, put update in buffer list
 
-                // Send “UPDATE_NORMAL <timestamp> <my_server_index> <update>” to servers group
+                // Increment counter
+                my_counter++;
+
+                // Increment index
+                my_index++;
+
+                // Write the message to log file
+                // Append to logs[my_server_index] list
+                // Update matrix[my_server_index][my_server_index] to new index
+                ret = save_update(my_counter, my_server_index, my_index, message, true);
+                if (ret < 0) {
+                    printf("Error: fail to save my update to file in UPDATE_CLIENT %s\n", message);
+                    break;
+                }
+
+                // Send “UPDATE_NORMAL <my_counter> <my_server_index> <my_index> <update>” to servers group
                 char update[300];
                 strcpy(update, message);
-                sprintf(to_send, "%d %d %s", my_timestamp, my_server_index, update);
+                sprintf(to_send, "%d %d %d %s", my_counter, my_server_index, my_index, update);
                 ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_NORMAL, strlen(to_send), to_send);
                 if (ret < 0) {
                     SP_error(ret);
@@ -689,53 +708,44 @@ static void Read_message()
             {
                 printf("Receive UPDATE_NORMAL %s\n", message);
                 num_update_normal++;
-                // message = <timestamp> <server_index> <update>
+                // message = <counter> <server_index> <index> <update>
 
-                int timestamp;
+                int counter;
                 int server_index;
+                int index;
                 char update[300];
                 int num_read;
 
-                ret = sscanf(message, "%d %d%n", &timestamp, &server_index, &num_read);
-                if (ret < 2) {
+                ret = sscanf(message, "%d %d %d%n", &counter, &server_index, &index, &num_read);
+                if (ret < 3) {
                     printf("Error: cannot parse timestamp and server_index from UPDATE_NORMAL %s\n", message);
+                    break;
+                }
+
+                // If index is out of order, return
+                if (index != matrix[my_server_index - 1][server_index - 1] + 1) {
+                    printf("Server: update is out of order in UPDATE_NORMAL %s\n", message);
                     break;
                 }
 
                 strcpy(update, &message[num_read + 1]);
 
-                // If in the middle of merging, put the update in buffer
-                if (merging) { 
-                    struct log *new_log = malloc(sizeof(struct log));
-                    new_log->timestamp = timestamp;
-                    new_log->server_index = server_index;
-                    strcpy(new_log->content, update);
-                    new_log->next = NULL;
-
-                    if (buffer == NULL) {
-                        buffer = new_log;
-                        end_of_buffer = new_log;
-                    } else {
-                        end_of_buffer->next = new_log;
-                        end_of_buffer = new_log;
+                // If the update is not sent by myself, save to file and update matrix, counter, etc
+                if (server_index != my_server_index) {
+                    ret =  save_update(counter, server_index, index, update, true);
+                    if (ret < 0) {
+                        printf("Error: fail to save update in UPDATE_NORMAL %s\n", message);
+                        break;
                     }
-                    break; 
-                }
-
-                // Save the update to file, memory and update timestamp & matrix accordingly
-                ret = save_update(timestamp, server_index, update, true);
-                if (ret < 0) {
-                    printf("Error: fail to save update from UPDATE_NORMAL %s\n", message);
-                    break;
                 }
 
                 // Execute the update on data structures, and send messages to clients
                 if (update[0] == 'a') {
-                    ret = execute_append(timestamp, server_index, update);
+                    ret = execute_append(counter, server_index, update);
                 } else if (update[0] == 'l') {
-                    ret = execute_like(update);
+                    ret = execute_like(counter, server_index, update);
                 } else if (update[0] == 'r') {
-                    ret = execute_unlike(update);
+                    ret = execute_unlike(counter, server_index, update);
                 } else {
                     printf("Error: unknown command in UPDATE_NORMAL %s\n", message);
                     break;
@@ -993,12 +1003,7 @@ static void Read_message()
                 int num_likes;
                 while (cur != NULL) {
                     // Calculate number of likes
-                    num_likes = 0;
-                    struct participant *cur_participant = cur->liked_by;
-                    while (cur_participant != NULL) {
-                        num_likes++;
-                        cur_participant = cur_participant->next;
-                    }
+                    num_likes = get_num_likes(cur);
 
                     // Send "HISTORY <creator> <num_likes> <content>" to client's private group
                     sprintf(to_send, "%s %d %s", cur->creator, num_likes, cur->content);
@@ -1215,14 +1220,33 @@ static int read_state()
     char content[81];
     int num_rooms;
     int num_messages;
-    int timestamp;
+    int counter;
     int server_index;
+    int len_likes;
+    int liked;
     int ret;
 
-    // Read first line: <5 lamport timestamps>
+    // Read first line: <counter>
     ret = getline(&line, &length, state_fd);
     if (ret < 0) {
         printf("Error: fail to read first line of state file %s\n", state_file_name);
+        free(line);
+        return -1;
+    }
+    ret = sscanf(line, "%d", &counter);
+    if (ret < 1) {
+        printf("Error: fail to read counter in first line %s\n", line);
+        free(line);
+        return -1;
+    }
+
+    // Set my counter
+    my_counter = counter;
+
+    // Read second line: <5 indices>
+    ret = getline(&line, &length, state_fd);
+    if (ret < 0) {
+        printf("Error: fail to read second line of state file %s\n", state_file_name);
         free(line);
         return -1;
     }
@@ -1233,18 +1257,13 @@ static int read_state()
         free(line);
         return -1;
     }
-    printf("\tRetrive 5 timestamps: %d %d %d %d %d\n", matrix[my_server_index - 1][0], matrix[my_server_index - 1][1],
+    printf("\tRetrive 5 indices: %d %d %d %d %d\n", matrix[my_server_index - 1][0], matrix[my_server_index - 1][1],
         matrix[my_server_index - 1][2], matrix[my_server_index - 1][3], matrix[my_server_index - 1][4]);
 
-    // Set my timestamp as the highest timestamp received
-    my_timestamp = matrix[my_server_index - 1][0];
-    for (int i = 0; i < 5; i++) {
-        if (matrix[my_server_index - 1][i] > my_timestamp) {
-            my_timestamp = matrix[my_server_index - 1][i];
-        }
-    }
+    // Set my index
+    my_index = matrix[my_server_index - 1][my_server_index - 1];
 
-    // Read second line: <number of rooms>
+    // Read third line: <number of rooms>
     ret = getline(&line, &length, state_fd);
     if (ret < 0) {
         printf("Error: fail to read second line of state file %s\n", state_file_name);
@@ -1278,26 +1297,26 @@ static int read_state()
         printf("\tCreate room %s with %d messages\n", room_name, num_messages);
 
         for (int j = 0; j < num_messages; j++) {
-            // Read <timestamp> <server_index> <creator> <content>
+            // Read message line: <counter> <server_index> <creator> <length of likes list> <content>
             ret = getline(&line, &length, state_fd);
             if (ret < 0) {
                 printf("Error: fail to read message line in state file %s\n", state_file_name);
                 free(line);
                 return -1;
             }
-            ret = sscanf(line, "%d %d %s %[^\n]\n", &timestamp, &server_index, username, content);
-            if (ret < 4) {
-                printf("Error: fail to parse timestamp, server_index, creator and num_likes from line %s\n", line);
+            ret = sscanf(line, "%d %d %s %d %[^\n]\n", &counter, &server_index, username, &len_likes, content);
+            if (ret < 5) {
+                printf("Error: fail to parse counter, server_index, creator, length of likes list and num_likes from line %s\n", line);
                 free(line);
                 return -1;
             }
 
             struct message *new_message = malloc(sizeof(struct message));
-            new_message->timestamp = timestamp;
+            new_message->counter = counter;
             new_message->server_index = server_index;
             strcpy(new_message->content, content);
             strcpy(new_message->creator, username);
-            new_message->liked_by = NULL;
+            new_message->likes = NULL;
             new_message->next = NULL;
 
             ret = insert_message(room, new_message);
@@ -1308,28 +1327,35 @@ static int read_state()
             }
             printf("\t\tinsert message created by %s: %s\n", new_message->creator, new_message->content);
 
-            // Read <liked_by>
-            ret = getline(&line, &length, state_fd);
-            if (ret < 0) {
-                printf("Error: fail to read liked_by line in state file %s\n", state_file_name);
-                free(line);
-                return -1;
-            }
-            username[0] = '\0';
-            for (int k = 0; k < strlen(line); k++) {
-                if (line[k] != ' ') {
-                    username[strlen(username) + 1] = '\0';
-                    username[strlen(username)] = line[k];
-                } else {
-                    ret = add_like(new_message, username);
-                    if (ret < 0) {
-                        printf("Error: fail to add like of %s to message %s in state file\n", username, new_message->content);
-                        free(line);
-                        return -1;
-                    }
-                    printf("\t\t\tadd like from %s\n", username);
-                    username[0] = '\0';
+            for (int k = 0; k < len_likes; k++) {
+                // Read like line: <username> <counter> <server_index> <liked 0/1>
+                ret = getline(&line, &length, state_fd);
+                if (ret < 0) {
+                    printf("Error: fail to read like line in state file %s\n", state_file_name);
+                    free(line);
+                    return -1;
                 }
+                ret = sscanf(line, "%s %d %d %d", username, &counter, &server_index, &liked);
+                if (ret < 4) {
+                    printf("Error: fail to parse username, counter, server_index and liked from line %s\n", line);
+                    free(line);
+                    return -1;
+                }
+
+                if (liked == 0) {
+                    ret = add_like(new_message, username, false, counter, server_index);
+                } else if (liked == 1) {
+                    ret = add_like(new_message, username, true, counter, server_index);
+                } else {
+                    printf("Error: liked is neither 0 nor 1 in line %s\n", line);
+                    free(line);
+                    return -1;
+                }
+                if (ret < 0) {
+                    printf("Error: fail to add like node in line %s\n", line);
+                    return -1;
+                }
+                printf("\t\t\tadd like node (%d) from %s\n", liked, username);
             }
         }
     }
@@ -1341,7 +1367,14 @@ static int read_state()
 static int write_state() {
     int ret;
 
-    // Write first line: <5 lamport timestamps>
+    // Write first line: <counter>
+    ret = fprintf(state_fd, "%d\n", my_counter);
+    if (ret < 0) {
+        printf("Error: fail to write counter to state file\n");
+        return -1;
+    }
+
+    // Write second line: <5 indices>
     for (int i = 0; i < 5; i++) {
         ret = fprintf(state_fd, "%d ", matrix[my_server_index - 1][i]);
         if (ret < 0) {
@@ -1350,7 +1383,7 @@ static int write_state() {
         }
     }
 
-    // Write second line: <num_rooms>
+    // Write third line: <num_rooms>
     struct room* cur_room = rooms;
     int num_rooms = 0;
     while(cur_room != NULL) {
@@ -1382,28 +1415,33 @@ static int write_state() {
 
         cur_message = cur_room->messages;
         while(cur_message != NULL) {
-            // Write <timestamp> <server_index> <creator> <content>
-            ret = fprintf(state_fd, "%d %d %s %s\n", cur_message->timestamp, cur_message->server_index,
-                cur_message->creator, cur_message->content);
+
+            // Find length of likes list
+            int len_likes = 0;
+            struct like *cur_like = cur_message->likes;
+            while (cur_like != NULL) {
+                len_likes++;
+                cur_like = cur_like->next;
+            }
+
+            // Write message line: <counter> <server_index> <creator> <length of likes list> <content>
+            ret = fprintf(state_fd, "%d %d %s %d %s\n", cur_message->counter, cur_message->server_index,
+                cur_message->creator, len_likes, cur_message->content);
             if (ret < 0) {
                 printf("Error: fail to write message line to state file %s\n", state_file_name);
                 return -1;
             }
 
             // Write <liked_by>
-            struct participant* cur_liked_by = cur_message->liked_by;
-            while(cur_liked_by != NULL) {
-                ret = fprintf(state_fd, "%s ", cur_liked_by->name);
+            cur_like = cur_message->likes;
+            while(cur_like != NULL) {
+                // Write like line: <username> <counter> <server_index> <liked 0/1>
+                ret = fprintf(state_fd, "%s %d %d %d\n", cur_like->username, cur_like->counter, cur_like->server_index, cur_like->liked);
                 if (ret < 0) {
-                    printf("Error: fail to write liked_by list to state file %s\n", state_file_name);
+                    printf("Error: fail to write likes list to state file %s\n", state_file_name);
                     return -1;
                 }
-                cur_liked_by = cur_liked_by->next;
-            }
-            ret = fprintf(state_fd, "\n");
-            if (ret < 0) {
-                printf("Error: fail to write new line to state file %s\n", state_file_name);
-                return -1;
+                cur_like = cur_like->next;
             }
 
             cur_message = cur_message->next;
@@ -1420,15 +1458,16 @@ static int read_log(int i)
     size_t length = MAX_MESS_LEN;
     int ret;
 
-    int timestamp;
+    int counter;
     int server_index;
+    int index;
     char update[300];
             
     while((ret = getline(&line, &length, log_fd[i])) != -1) {
-        // line = <timestamp> <server_index> <update>
-        ret = sscanf(line, "%d %d %[^\n]\n", &timestamp, &server_index, update);
-        if (ret < 3) {
-            printf("Error: cannot parse timestamp and server_index when reading from line %s\n", line);
+        // line = <counter> <server_index> <index> <update>
+        ret = sscanf(line, "%d %d %d %[^\n]\n", &counter, &server_index, &index, update);
+        if (ret < 4) {
+            printf("Error: cannot parse counter, server_index, index and update when reading from line %s\n", line);
             free(line);
             return -1;
         }
@@ -1438,15 +1477,16 @@ static int read_log(int i)
             continue;
         }
 
-        // Read log from the current timestamp
-        if (timestamp <= matrix[my_server_index - 1][server_index - 1]) {
+        // Read log from the current index
+        if (index <= matrix[my_server_index - 1][server_index - 1]) {
             continue;
         }
 
         // Insert it in updates list
         struct log* new_log = malloc(sizeof(struct log));
-        new_log->timestamp = timestamp;
+        new_log->counter = counter;
         new_log->server_index = server_index;
+        new_log->index = index;
         strcpy(new_log->content, update);
         new_log->next = NULL;
 
@@ -1464,14 +1504,14 @@ static void clear()
         // delete messages list
         struct message *cur_message = rooms->messages;
         while (cur_message != NULL) {
-            // delete liked_by list
-            struct participant *cur_participant = cur_message->liked_by;
-            while (cur_participant != NULL) {
-                struct participant *participant_to_delete = cur_participant;
-                cur_participant = cur_participant->next;
-                free(participant_to_delete);
+            // delete likeds list
+            struct like *cur_like = cur_message->likes;
+            while (cur_like != NULL) {
+                struct like *like_to_delete = cur_like;
+                cur_like = cur_like->next;
+                free(like_to_delete);
             }
-            cur_message->liked_by = NULL;
+            cur_message->likes = NULL;
 
             struct message *message_to_delete = cur_message;
             cur_message = cur_message->next;
@@ -1497,24 +1537,25 @@ static void clear()
 
     rooms = NULL;
 
-    // Set matrix and timestamp to 0
+    // Set matrix, counter and index to 0
     for (int i = 0; i < 5; i++) {
         for (int j = 0; j < 5; j++) {
             matrix[i][j] = 0;
         }
     }
-    my_timestamp = 0;
+    my_counter = 0;
+    my_index = 0;
 }
 
-static int save_update(int timestamp, int server_index, char* update, bool write_to_file)
+static int save_update(int counter, int server_index, int index, char* update, bool write_to_file)
 {
     int ret;
 
     if (write_to_file) {
         // Write update to “server[my_server_index]-log[server_index].out” file
         log_fd[server_index - 1] = fopen(log_file_names[server_index - 1], "a+");
-        // Write <timestamp> <server_index> <log content>
-        ret = fprintf(log_fd[server_index - 1], "%d %d %s\n", timestamp, server_index, update);
+        // Write <counter> <server_index> <index> <log content>
+        ret = fprintf(log_fd[server_index - 1], "%d %d %d %s\n", counter, server_index, index, update);
         if (ret < 0) {
             printf("Error: fail to write update %s to file %s\n", update, log_file_names[server_index - 1]);
             return -1;
@@ -1524,8 +1565,9 @@ static int save_update(int timestamp, int server_index, char* update, bool write
 
     // Append it in logs[server_index] list
     struct log* new_log = malloc(sizeof(struct log));
-    new_log->timestamp = timestamp;
+    new_log->counter = counter;
     new_log->server_index = server_index;
+    new_log->index = index;
     strcpy(new_log->content, update);
     new_log->next = NULL;
 
@@ -1538,16 +1580,16 @@ static int save_update(int timestamp, int server_index, char* update, bool write
     }
 
     // Adopt the lamport timestamp if it is higher
-    if (timestamp > my_timestamp) {
-        my_timestamp = timestamp;
+    if (counter > my_counter) {
+        my_counter = counter;
     }
 
-    // Update matrix[my_server_index][server_index] to the new timestamp
-    matrix[my_server_index - 1][server_index - 1] = timestamp;
+    // Update matrix[my_server_index][server_index] to the new index
+    matrix[my_server_index - 1][server_index - 1] = index;
     return 0;
 }
 
-static int execute_append(int timestamp, int server_index, char *update)
+static int execute_append(int counter, int server_index, char *update)
 {
     int ret;
     char to_send[MAX_MESS_LEN];
@@ -1556,16 +1598,17 @@ static int execute_append(int timestamp, int server_index, char *update)
     // update = a <room_name> <username> <content>
     ret = sscanf(update, "a %s %s%n", room_name, username, &num_read);
     if (ret < 2) {
-        printf("Error: cannot parse room_name and username from UPDATE_NORMAL %s\n", update);
+        printf("Error: cannot parse room_name and username from update %s\n", update);
+        return -1;
     }
 
-    // Insert message to messages list of the room, in the order of timestamp+server_index
+    // Insert message to messages list of the room, in the order of counter+server_index
     struct message *new_message = malloc(sizeof(struct message));
-    new_message->timestamp = timestamp;
+    new_message->counter = counter;
     new_message->server_index = server_index;
     strcpy(new_message->content, &update[num_read + 1]);
     strcpy(new_message->creator, username);
-    new_message->liked_by = NULL;
+    new_message->likes = NULL;
     new_message->next = NULL;
 
     struct room* room = find_room(rooms, room_name);
@@ -1578,8 +1621,8 @@ static int execute_append(int timestamp, int server_index, char *update)
     printf("\tappend message created by %s to %s: %s\n", new_message->creator, room_name, new_message->content);
 
     if (room->participants[my_server_index - 1] != NULL) {
-        // Send “APPEND <timestamp> <server_index> <username> <content>” to the server-room group
-        sprintf(to_send, "%d %d %s %s", new_message->timestamp, new_message->server_index, new_message->creator, new_message->content);
+        // Send “APPEND <counter> <server_index> <username> <content>” to the server-room group
+        sprintf(to_send, "%d %d %s %s", new_message->counter, new_message->server_index, new_message->creator, new_message->content);
         sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
         ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, APPEND, strlen(to_send), to_send);
         if (ret < 0) {
@@ -1590,17 +1633,17 @@ static int execute_append(int timestamp, int server_index, char *update)
     return 0;
 }
 
-static int execute_like(char *update)
+static int execute_like(int counter, int server_index, char *update)
 {
     int ret;
-    int timestamp;
-    int server_index;
+    int message_counter;
+    int message_server_index;
     char to_send[MAX_MESS_LEN];
 
-    // update = l <room_name> <timestamp of the liked message> <server_index of the liked message> <username>
-    ret = sscanf(update, "l %s %d %d %s", room_name, &timestamp, &server_index, username);
+    // update = l <room_name> <counter of the liked message> <server_index of the liked message> <username>
+    ret = sscanf(update, "l %s %d %d %s", room_name, &message_counter, &message_server_index, username);
     if (ret < 4) {
-        printf("Error: cannot parse room_name, timestamp, server_index and username from update %s\n", update);
+        printf("Error: cannot parse room_name, counter, server_index and username from update %s\n", update);
         return -1;
     }
 
@@ -1610,9 +1653,9 @@ static int execute_like(char *update)
         return -1;
     }
 
-    struct message *message = find_message(room, timestamp, server_index);
+    struct message *message = find_message(room, message_counter, message_server_index);
     if (message == NULL) {
-        printf("Error: cannot find message with timestamp %d and server_index %d in room %s\n", timestamp, server_index, room_name);
+        printf("Error: cannot find message with counter %d and server_index %d in room %s\n", message_counter, message_server_index, room_name);
         return -1;
     }
 
@@ -1622,19 +1665,52 @@ static int execute_like(char *update)
         return 0;
     }
 
-    // Check if the message has been liked by the user
-    int num_likes = add_like(message, username);
-    if (num_likes < 0) {
-        printf("\tmessage has been liked by %s\n", username);
-        return 0;
+    struct like *cur = message->likes;
+    while (cur != NULL) {
+        // If there is already a like node with the same username
+        if (strcmp(username, cur->username) == 0) {
+            if (counter < cur->counter || (counter == cur->counter && server_index < cur->server_index)) {
+                printf("\tmessage has been liked/unliked(%d) by a later update with counter %d server_index %d\n", cur->liked, cur->counter, cur->server_index);
+                return 0;
+            }
+            cur->counter = counter;
+            cur->server_index = server_index;
+
+            if (!cur->liked) {
+                cur->liked = true;
+                printf("\t%s likes message %s in %s\n", username, message->content, room_name);
+                if (room->participants[my_server_index - 1] != NULL) {
+                    int num_likes = get_num_likes(message);
+                    // Send “LIKES <message’s counter> <message’s server_index> <num_likes>” to the server-room group
+                    sprintf(to_send, "%d %d %d", message_counter, message_server_index, num_likes);
+                    sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
+                    ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, LIKES, strlen(to_send), to_send);
+                    if (ret < 0) {
+                        SP_error(ret);
+                        Bye();
+                    }
+                }
+            } else {
+                printf("\tmessage has been liked by %s\n", username);
+            }
+
+            return 0;
+        }
+        cur = cur->next;
     }
 
-    printf("\tadd like of %s to message %s in %s\n", username, message->content, room_name);
+    // If there is no node with the same username, insert a new node
+    ret = add_like(message, username, true, counter, server_index);
+    if (ret < 0) {
+        printf("Error: fail to add like node for update %s\n", update);
+        return -1;
+    }
+    printf("\tadd like node of %s to message %s in %s\n", username, message->content, room_name);
 
-    // If the current server has participants in this room
     if (room->participants[my_server_index - 1] != NULL) {
-        // Send “LIKES <message’s timestamp> <message’s server_index> <num_likes>” to the server-room group
-        sprintf(to_send, "%d %d %d", timestamp, server_index, num_likes);
+        int num_likes = get_num_likes(message);
+        // Send “LIKES <message’s counter> <message’s server_index> <num_likes>” to the server-room group
+        sprintf(to_send, "%d %d %d", message_counter, message_server_index, num_likes);
         sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
         ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, LIKES, strlen(to_send), to_send);
         if (ret < 0) {
@@ -1646,17 +1722,17 @@ static int execute_like(char *update)
     return 0;
 }
 
-static int execute_unlike(char *update)
+static int execute_unlike(int counter, int server_index, char *update)
 {
     int ret;
-    int timestamp;
-    int server_index;
+    int message_counter;
+    int message_server_index;
     char to_send[MAX_MESS_LEN];
 
-    // update = r <room_name> <timestamp of the liked message> <server_index of the liked message> <username>
-    ret = sscanf(update, "r %s %d %d %s", room_name, &timestamp, &server_index, username);
+    // update = r <room_name> <counter of the liked message> <server_index of the liked message> <username>
+    ret = sscanf(update, "r %s %d %d %s", room_name, &message_counter, &message_server_index, username);
     if (ret < 4) {
-        printf("Error: cannot parse room_name, timestamp, server_index and username from update %s\n", update);
+        printf("Error: cannot parse room_name, counter, server_index and username from update %s\n", update);
         return -1;
     }
 
@@ -1666,9 +1742,9 @@ static int execute_unlike(char *update)
         return -1;
     }
 
-    struct message *message = find_message(room, timestamp, server_index);
+    struct message *message = find_message(room, message_counter, message_server_index);
     if (message == NULL) {
-        printf("Error: cannot find message with timestamp %d and server_index %d in room %s\n", timestamp, server_index, room_name);
+        printf("Error: cannot find message with counter %d and server_index %d in room %s\n", message_counter, message_server_index, room_name);
         return -1;
     }
 
@@ -1678,26 +1754,47 @@ static int execute_unlike(char *update)
         return 0;
     }
 
-    // Check if the message has been liked by the user
-    int num_likes = remove_like(message, username);
-    if (num_likes < 0) {
-        printf("\tmessage has not been liked by %s\n", username);
-        return 0;
+    struct like *cur = message->likes;
+    while (cur != NULL) {
+        // If there is already a like node with the same username
+        if (strcmp(username, cur->username) == 0) {
+            if (counter < cur->counter || (counter == cur->counter && server_index < cur->server_index)) {
+                printf("\tmessage has been liked/unliked(%d) by a later update with counter %d server_index %d\n", cur->liked, cur->counter, cur->server_index);
+                return 0;
+            }
+            cur->counter = counter;
+            cur->server_index = server_index;
+
+            if (cur->liked) {
+                cur->liked = false;
+                printf("\t%s unlikes message %s in %s\n", username, message->content, room_name);
+                if (room->participants[my_server_index - 1] != NULL) {
+                    int num_likes = get_num_likes(message);
+                    // Send “LIKES <message’s counter> <message’s server_index> <num_likes>” to the server-room group
+                    sprintf(to_send, "%d %d %d", message_counter, message_server_index, num_likes);
+                    sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
+                    ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, LIKES, strlen(to_send), to_send);
+                    if (ret < 0) {
+                        SP_error(ret);
+                        Bye();
+                    }
+                }
+            } else {
+                printf("\tmessage has been unliked by %s\n", username);
+            }
+
+            return 0;
+        }
+        cur = cur->next;
     }
 
-    printf("\tremove like of %s to message %s in %s\n", username, message->content, room_name);
-    
-    // If the current server has participants in this room
-    if (room->participants[my_server_index - 1] != NULL) {
-        // Send “LIKES <message’s timestamp> <message’s server_index> <num_likes>” to the server-room group
-        sprintf(to_send, "%d %d %d", timestamp, server_index, num_likes);
-        sprintf(server_room_group, "server%d-%s", my_server_index, room_name);
-        ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, LIKES, strlen(to_send), to_send);
-        if (ret < 0) {
-            SP_error(ret);
-            Bye();
-        }
+    // If there is no node with the same username, insert a new node
+    ret = add_like(message, username, false, counter, server_index);
+    if (ret < 0) {
+        printf("Error: fail to add like node for update %s\n", update);
+        return -1;
     }
+    printf("\tadd unlike node of %s to message %s in %s\n", username, message->content, room_name);
 
     return 0;
 }
@@ -1839,8 +1936,8 @@ int insert_message(struct room* room, struct message* message)
     dummy.next = room->messages;
     struct message *cur = &dummy;
     while (cur->next != NULL) {
-        if ((cur->next->timestamp > message->timestamp) 
-            || (cur->next->timestamp == message->timestamp && cur->next->server_index > message->server_index)) {
+        if ((cur->next->counter > message->counter) 
+            || (cur->next->counter == message->counter && cur->next->server_index > message->server_index)) {
             
             // insert at current position
             message->next = cur->next;
@@ -1860,7 +1957,7 @@ int insert_message(struct room* room, struct message* message)
     return 0;
 }
 
-struct message* find_message(struct room *room, int timestamp, int server_index)
+struct message* find_message(struct room *room, int counter, int server_index)
 {
     if (room == NULL || room->messages == NULL) {
         return NULL;
@@ -1868,7 +1965,7 @@ struct message* find_message(struct room *room, int timestamp, int server_index)
 
     struct message *cur = room->messages;
     while (cur != NULL) {
-        if (cur->timestamp == timestamp && cur->server_index == server_index) {
+        if (cur->counter == counter && cur->server_index == server_index) {
             return cur;
         }
         cur = cur->next;
@@ -1877,92 +1974,60 @@ struct message* find_message(struct room *room, int timestamp, int server_index)
     return NULL;
 }
 
-int add_like(struct message *message, char* username)
+int get_num_likes(struct message *message)
 {
     if (message == NULL) {
-        return -2;
+        return -1;
     }
-
-    if (message->liked_by == NULL) {
-        struct participant *new_participant = malloc(sizeof(struct participant));
-        strcpy(new_participant->name, username);
-        new_participant->next = NULL;
-
-        message->liked_by = new_participant;
-        return 1;
-    }
-
-    struct participant dummy;
-    dummy.next = message->liked_by;
-
-    struct participant *cur = &dummy;
 
     int num_likes = 0;
 
-    while (cur->next != NULL) {
-        // if username already exists in liked_by list
-        if (strcmp(cur->next->name, username) == 0) {
-            return -1;
+    struct like *cur = message->likes;
+    while (cur != NULL) {
+        if (cur->liked) {
+            num_likes++;
         }
         cur = cur->next;
-        num_likes++;
     }
-
-    struct participant *new_participant = malloc(sizeof(struct participant));
-    strcpy(new_participant->name, username);
-    new_participant->next = NULL;
-
-    cur->next = new_participant;
-    num_likes++;
 
     return num_likes;
 }
 
-int remove_like(struct message *message, char *username)
+int add_like(struct message *message, char* username, bool liked, int counter, int server_index)
 {
     if (message == NULL) {
-        return -2;
-    }
-
-    struct participant dummy;
-    dummy.next = message->liked_by;
-
-    struct participant *cur = &dummy;
-
-    int num_likes = 0;
-    bool deleted = false;
-
-    while (cur->next != NULL) {
-        if (strcmp(cur->next->name, username) == 0) {
-            // remove participant at cur->next
-            struct participant *to_delete = cur->next;
-            cur->next = cur->next->next;
-            free(to_delete);
-            deleted = true;
-        }
-        cur = cur->next;
-        num_likes++;
-
-        // if remove the last participant
-        if (cur == NULL) {
-            num_likes--;
-            break;
-        }
-    }
-
-    message->liked_by = dummy.next;
-
-    // user does not exist in the list
-    if (!deleted) {
         return -1;
     }
 
-    return num_likes;
+    struct like *new_like = malloc(sizeof(struct like));
+    strcpy(new_like->username, username);
+    new_like->liked = liked;
+    new_like->counter = counter;
+    new_like->server_index = server_index;
+    new_like->next = NULL;
+
+    if (message->likes == NULL) {
+        message->likes = new_like;
+        return 0;
+    }
+
+    struct like dummy;
+    dummy.next = message->likes;
+
+    struct like *cur = &dummy;
+
+    while (cur->next != NULL) {
+        cur = cur->next;
+    }
+
+    cur->next = new_like;
+
+    return 0;
 }
 
 void get_messages(char* to_send, struct room* room) {
     if (room == NULL || room->messages == NULL) {
-        sprintf(to_send, "%d", 0);
+        to_send[0] = '\0';
         return;
     }
 
@@ -1982,18 +2047,12 @@ void get_messages(char* to_send, struct room* room) {
     to_send[0] = '\0';
     char message[200];
     while (first != NULL) {
-        int num_likes = 0;
-        struct participant* participants = first->liked_by;
-        while (participants != NULL) {
-            num_likes++;
-            participants = participants->next;
-        }
-        // Every message: <timestamp> <server_index> <creator> <num_likes> <content>\n
-        sprintf(message, "%d %d %s %d %s\n", first->timestamp, first->server_index, first->creator, num_likes, first->content);
+        int num_likes = get_num_likes(first);
+        // Every message: <counter> <server_index> <creator> <num_likes> <content>\n
+        sprintf(message, "%d %d %s %d %s\n", first->counter, first->server_index, first->creator, num_likes, first->content);
         strcat(to_send, message);
         first = first->next;
     }
-
 }
 
 void get_participants(char* to_send, struct room* room)
@@ -2057,9 +2116,9 @@ void get_participants(char* to_send, struct room* room)
 
 }
 
-int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
+int clear_log(struct log **logs_ref, struct log **last_log_ref, int index)
 {
-    if (timestamp == 0) {
+    if (index == 0) {
         return 0;
     }
 
@@ -2069,7 +2128,7 @@ int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp)
 
     struct log *cur = *logs_ref;
     while (cur != NULL) {
-        if (cur->timestamp <= timestamp) {
+        if (cur->index <= index) {
             // delete log at current position
             struct log *to_delete = cur;
             cur = cur->next;
@@ -2095,8 +2154,8 @@ void insert_log(struct log **updates_ref, struct log *log)
 
     while (cur->next != NULL) {
         
-        if (cur->next->timestamp > log->timestamp 
-            || (cur->next->timestamp == log->timestamp && cur->next->server_index > log->server_index)) {
+        if (cur->next->counter > log->counter 
+            || (cur->next->counter == log->counter && cur->next->server_index > log->server_index)) {
 
             // insert between cur and cur->next
             log->next = cur->next;
