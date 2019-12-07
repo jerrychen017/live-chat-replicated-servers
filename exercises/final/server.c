@@ -61,6 +61,10 @@ static int save_update(int counter, int server_index, int index, char* update, b
 static int execute_append(int counter, int server_index, char *update);
 static int execute_like(int counter, int server_index, char *update);
 static int execute_unlike(int counter, int server_index, char *update);
+static int execute_join(char *update);
+static int execute_roomchange(char *update);
+static int execute_history(char *update);
+static int execute_buffer(struct log *log);
 
 // TODO: make sure one server index is used exactly once
 
@@ -82,8 +86,8 @@ int main(int argc, char *argv[])
         received_highest_timestamp[i] = false;
     }
 
-    buffer = NULL; 
-    end_of_buffer = NULL; 
+    buffer = NULL;
+    end_of_buffer = NULL;
     my_counter = 0;
     my_index = 0;
     num_update_normal = 0;
@@ -172,7 +176,7 @@ int main(int argc, char *argv[])
                 continue;
             }
 
-            // Read from the line matching with timestamp, and save logs in memory
+            // Read from the line matching with index, and put in updates list
             ret = read_log(i);
             if (ret < 0) {
                 printf("Error: fail to read log from file %s\n", log_file_names[i]);
@@ -199,11 +203,16 @@ int main(int argc, char *argv[])
 
         printf("Server: execute update from log file: %d %d %d %s\n", updates->counter, updates->server_index, updates->index, updates->content);
 
-        // TODO: move around node instead of free and recreate
+        // TODO: move around node instead of free and reallocate
         ret = save_update(updates->counter, updates->server_index, updates->index, updates->content, false);
         if (ret < 0) {
             printf("Error: fail to save update read from file: %d %d %d %s\n", updates->counter, updates->server_index, updates->index, updates->content);
             continue;
+        }
+
+        // Adopt the index if the update is from myself
+        if (updates->server_index == my_server_index) {
+            my_index = updates->index;
         }
                         
         if (updates->content[0] == 'a') {
@@ -231,8 +240,8 @@ int main(int argc, char *argv[])
             printf("Server: fail to execute update %s\n", updates->content);
         }
 
-        struct log* to_delete = updates; 
-        updates = updates->next; 
+        struct log* to_delete = updates;
+        updates = updates->next;
         free(to_delete);
     }    
     
@@ -301,9 +310,11 @@ static void Read_message()
                     break;
                 }
                 printf("Server: client %s requests connection\n", sender);
+
+                // Join server-client group
                 ret = SP_join( Mbox, server_client_group );
 			    if (ret < 0) {
-                    SP_error( ret );
+                    SP_error(ret);
                 }
                 break;
             }
@@ -312,95 +323,68 @@ static void Read_message()
             {
                 // sender = client's private group
                 // message = <room_name>
-                sscanf(message, "%s", room_name);
 
-                // Search rooms and see if the client is previously in any room
-                struct room* old_room = find_room_of_client(rooms, sender, my_server_index);
-                char old_room_name[80];
-                if (old_room == NULL) {
-                    strcpy(old_room_name, "null");
-                } else {
-                    strcpy(old_room_name, old_room->name);
+                ret = sscanf(message, "%s", room_name);
+                if (ret < 1) {
+                    printf("Error: fail to parse room name from JOIN %s\n", message);
+                    break;
                 }
 
-                // Send ROOMCHANGE <client_name> <old_room> <new_room> <my_server_index> to servers group
-                sprintf(to_send, "%s %s %s %d", sender, old_room_name, room_name, my_server_index);
-                ret = SP_multicast(Mbox, AGREED_MESS, servers_group, ROOMCHANGE, strlen(to_send), to_send);
-                if (ret < 0) {
-				    SP_error( ret );
-				    Bye();
-			    }
+                if (merging) {
+                    struct log *new_log = malloc(sizeof(struct log));
+                    // content = j <room_name> <client_name>
+                    sprintf(new_log->content, "j %s %s", room_name, sender);
+                    new_log->next = NULL;
 
-                printf("Server: client %s requests to switch from %s to %s\n", sender, old_room_name, room_name);
+                    // Append to buffer list
+                    if (buffer == NULL) {
+                        buffer = new_log;
+                        end_of_buffer = new_log;
+                    } else {
+                        end_of_buffer->next = new_log;
+                        end_of_buffer = new_log;
+                    }
 
-                // Send up to latest 25 messages of this room to the client’s private group
-                struct room* new_room = find_room(rooms, room_name);
-                get_messages(to_send, new_room);
-                ret = SP_multicast(Mbox, AGREED_MESS, sender, MESSAGES, strlen(to_send), to_send);
-                printf("Server: send to client %s latest 25 messages of %s\nMESSAGES %s\n", sender, room_name, to_send);
+                    break;
+                }
+
+                char update[300];
+                // update = <room_name> <client_name>
+                sprintf(update, "%s %s", room_name, sender);
+                ret = execute_join(update);
                 if (ret < 0) {
-				    SP_error( ret );
-				    Bye();
-			    }
+                    printf("Error: fail to execute JOIN %s\n", message);
+                }
+
                 break;
             }
 
             case ROOMCHANGE:
             {
-                // message = <client_name> <old_room> <new_room> <server_index>
-                char old_room_name[80];
-                char new_room_name[80];
-                int server_index;
-                sscanf(message, "%s %s %s %d", client_name, old_room_name, new_room_name, &server_index);
-
                 printf("Receive ROOMCHANGE %s\n", message);
+                // message = <client_name> <old_room> <new_room> <server_index>
 
-                if (strcmp(old_room_name, "null") != 0) {
-                    // Remove client from participants[server_index] in the old room
-                    struct room* old_room = find_room(rooms, old_room_name);
-                    if (old_room == NULL) {
-                        printf("Error: old %s does not exist", old_room_name);
-                    }
-                    ret = remove_client(old_room, client_name, server_index);
-                    if (ret < 0) {
-                        printf("Error: fail to remove client %s from %s", client_name, old_room_name);
+                if (merging) {
+                    struct log *new_log = malloc(sizeof(struct log));
+                    // content = R <client_name> <old_room> <new_room> <server_index>
+                    sprintf(new_log->content, "R %s", message);
+                    new_log->next = NULL;
+
+                    // Append to buffer list
+                    if (buffer == NULL) {
+                        buffer = new_log;
+                        end_of_buffer = new_log;
                     } else {
-                        printf("Server: remove client %s from %s\n", client_name, old_room_name);
-                        if (old_room->participants[my_server_index - 1] != NULL) {
-                            // Send new participant list to the server-room group
-                            get_participants(to_send, old_room);
-                            sprintf(server_room_group, "server%d-%s", my_server_index, old_room_name);
-                            ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
-                            if (ret < 0) {
-				                SP_error( ret );
-				                Bye();
-			                }
-                        }
+                        end_of_buffer->next = new_log;
+                        end_of_buffer = new_log;
                     }
+
+                    break;
                 }
 
-                if (strcmp(new_room_name, "null") != 0) {
-                    // Add client to participants[server_index] in the new room
-                    struct room* new_room = find_room(rooms, new_room_name);
-                    if (new_room == NULL) {
-                        new_room = create_room(&rooms, new_room_name);
-                    }
-                    ret = add_client(new_room, client_name, server_index);
-                    if (ret < 0) {
-                        printf("Error: fail to add client %s to %s", client_name, new_room_name);
-                    } else {
-                        printf("Server: add client %s to %s\n", client_name, new_room_name);
-                        if (new_room->participants[my_server_index - 1] != NULL) {
-                            // Send new participant list to the server-room group
-                            get_participants(to_send, new_room);
-                            sprintf(server_room_group, "server%d-%s", my_server_index, new_room_name);
-                            ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
-                            if (ret < 0) {
-				                SP_error( ret );
-				                Bye();
-			                }
-                        }
-                    }
+                ret = execute_roomchange(message);
+                if (ret < 0) {
+                    printf("Error: fail to execute ROOMCHANGE %s\n", message);
                 }
 
                 break;
@@ -635,33 +619,17 @@ static void Read_message()
 
                         // Execute updates received in buffer during merging
                         while (buffer != NULL) {
-
-                            printf("Server: execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
-
-                            ret = save_update(buffer->timestamp, buffer->server_index, buffer->content, true);
+                            ret = execute_buffer(buffer);
+                            printf("Server: execute update in buffer: %s\n", buffer->content);
                             if (ret < 0) {
-                                printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
-                            }
-
-                            if (buffer->content[0] == 'a') {
-                                ret = execute_append(buffer->timestamp, buffer->server_index, buffer->content);
-                            } else if (buffer->content[0] == 'l') {
-                                ret = execute_like(buffer->content);
-                            } else if (buffer->content[0] == 'r') {
-                                ret = execute_unlike(buffer->content);
-                            } else {
-                                printf("Error: unknown command in update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
-                                break;
-                            }
-                            if (ret < 0) {
-                                printf("Error: fail to execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
-                                break;
+                                printf("Error: fail to execute update in buffer: %s\n", buffer->content);
                             }
 
                             struct log *to_delete = buffer; 
                             buffer = buffer->next; 
                             free(to_delete);
                         }
+
                         buffer = NULL; 
                         end_of_buffer = NULL;
                     }
@@ -674,7 +642,23 @@ static void Read_message()
             {
                 // message = <update>
 
-                // TODO: If in merging state, put update in buffer list
+                if (merging) {
+                    struct log *new_log = malloc(sizeof(struct log));
+                    // content = <update>
+                    sprintf(new_log->content, "%s", message);
+                    new_log->next = NULL;
+
+                    // Append to buffer list
+                    if (buffer == NULL) {
+                        buffer = new_log;
+                        end_of_buffer = new_log;
+                    } else {
+                        end_of_buffer->next = new_log;
+                        end_of_buffer = new_log;
+                    }
+
+                    break;
+                }
 
                 // Increment counter
                 my_counter++;
@@ -942,27 +926,10 @@ static void Read_message()
 
                     // Execute updates received in buffer during merging
                     while (buffer != NULL) {
-
-                        printf("Server: execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
-                        
-                        ret = save_update(buffer->timestamp, buffer->server_index, buffer->content, true);
+                        ret = execute_buffer(buffer);
+                        printf("Server: execute update in buffer: %s\n", buffer->content);
                         if (ret < 0) {
-                            printf("Error: fail to save update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
-                        }
-
-                        if (buffer->content[0] == 'a') {
-                            ret = execute_append(buffer->timestamp, buffer->server_index, buffer->content);
-                        } else if (buffer->content[0] == 'l') {
-                            ret = execute_like(buffer->content);
-                        } else if (buffer->content[0] == 'r') {
-                            ret = execute_unlike(buffer->content);
-                        } else {
-                            printf("Error: unknown command in update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
-                            break;
-                        }
-                        if (ret < 0) {
-                            printf("Error: fail to execute update in buffer: %d %d %s\n", buffer->timestamp, buffer->server_index, buffer->content);
-                            break;
+                            printf("Error: fail to execute update in buffer: %s\n", buffer->content);
                         }
 
                         struct log *to_delete = buffer; 
@@ -992,30 +959,39 @@ static void Read_message()
             case HISTORY:
             {
                 // message = <room_name>
-                // TODO: if in merging state, put history in buffer
-                struct room *room = find_room(rooms, message);
-                if (room == NULL) {
-                    printf("Error: room does not exist for HISTORY %s\n", message);
+                ret = sscanf(message, "%s", room_name);
+                if (ret < 1) {
+                    printf("Error: fail to parse room_name from HISTORY %s\n", message);
                     break;
                 }
 
-                struct message *cur = room->messages;
-                int num_likes;
-                while (cur != NULL) {
-                    // Calculate number of likes
-                    num_likes = get_num_likes(cur);
+                if (merging) {
+                    struct log *new_log = malloc(sizeof(struct log));
+                    // content = h <room_name> <client_name>
+                    sprintf(new_log->content, "h %s %s", room_name, sender);
+                    new_log->next = NULL;
 
-                    // Send "HISTORY <creator> <num_likes> <content>" to client's private group
-                    sprintf(to_send, "%s %d %s", cur->creator, num_likes, cur->content);
-                    ret = SP_multicast(Mbox, AGREED_MESS, sender, HISTORY, strlen(to_send), to_send);
-                    if (ret < 0) {
-                        SP_error(ret);
-                        Bye();
+                    // Append to buffer list
+                    if (buffer == NULL) {
+                        buffer = new_log;
+                        end_of_buffer = new_log;
+                    } else {
+                        end_of_buffer->next = new_log;
+                        end_of_buffer = new_log;
                     }
-                    cur = cur->next;
+                    break;
+                }
+
+                // update = <room_name> <client_name>
+                char update[300];
+                sprintf(update, "h %s %s", room_name, sender);
+                ret = execute_history(update);
+                if (ret < 0) {
+                    printf("Error: fail to execute HISTORY %s\n", message);
                 }
 
                 break;
+
             }
             
             default:
@@ -1477,12 +1453,6 @@ static int read_log(int i)
             continue;
         }
 
-        // Read log from the current index
-        if (index <= matrix[my_server_index - 1][server_index - 1]) {
-            continue;
-        }
-
-        // Insert it in updates list
         struct log* new_log = malloc(sizeof(struct log));
         new_log->counter = counter;
         new_log->server_index = server_index;
@@ -1490,7 +1460,22 @@ static int read_log(int i)
         strcpy(new_log->content, update);
         new_log->next = NULL;
 
-        insert_log(&updates, new_log);
+        // Covered in state, no need to execute the update
+        if (index <= matrix[my_server_index - 1][server_index - 1]) {
+            // Append to logs[server_index] list
+            if (logs[server_index - 1] == NULL) {
+                logs[server_index - 1] = new_log;
+                last_log[server_index - 1] = new_log;
+            } else {
+                last_log[server_index - 1]->next = new_log;
+                last_log[server_index - 1] = new_log;
+            }
+
+        // Is not covered by state
+        } else {
+            // Insert in updates list
+            insert_log(&updates, new_log);
+        }
     }
 
     free(line);
@@ -1797,6 +1782,211 @@ static int execute_unlike(int counter, int server_index, char *update)
     printf("\tadd unlike node of %s to message %s in %s\n", username, message->content, room_name);
 
     return 0;
+}
+
+static int execute_join(char *update)
+{
+    int ret;
+    char sender[MAX_GROUP_NAME];
+    char to_send[MAX_MESS_LEN];
+
+    // update = <room_name> <client_name>
+    ret = sscanf(update, "%s %s", room_name, sender);
+    if (ret < 2) {
+        printf("Error: fail to parse room_name and client_name from JOIN %s\n", update);
+        return -1;
+    }
+
+    // Search rooms and see if the client is previously in any room
+    struct room* old_room = find_room_of_client(rooms, sender, my_server_index);
+    char old_room_name[80];
+    if (old_room == NULL) {
+        strcpy(old_room_name, "null");
+    } else {
+        strcpy(old_room_name, old_room->name);
+    }
+
+    // Send ROOMCHANGE <client_name> <old_room> <new_room> <my_server_index> to servers group
+    sprintf(to_send, "%s %s %s %d", sender, old_room_name, room_name, my_server_index);
+    ret = SP_multicast(Mbox, AGREED_MESS, servers_group, ROOMCHANGE, strlen(to_send), to_send);
+    if (ret < 0) {
+		SP_error( ret );
+		Bye();
+	}
+
+    printf("Server: client %s requests to switch from %s to %s\n", sender, old_room_name, room_name);
+
+    // Send up to latest 25 messages of this room to the client’s private group
+    struct room* new_room = find_room(rooms, room_name);
+    get_messages(to_send, new_room);
+    ret = SP_multicast(Mbox, AGREED_MESS, sender, MESSAGES, strlen(to_send), to_send);
+    printf("Server: send to client %s latest 25 messages of %s\nMESSAGES %s\n", sender, room_name, to_send);
+    if (ret < 0) {
+		SP_error( ret );
+		Bye();
+	}
+
+    return 0;
+}
+
+static int execute_roomchange(char *update)
+{
+    int ret;
+    char to_send[MAX_MESS_LEN];
+    char old_room_name[80];
+    char new_room_name[80];
+    int server_index;
+
+    // update = <client_name> <old_room> <new_room> <server_index>
+    ret = sscanf(update, "%s %s %s %d", client_name, old_room_name, new_room_name, &server_index);
+    if (ret < 4) {
+        printf("Error: fail to parse client_name, old_room, new_room and server index from ROOMCHANGE %s\n", update);
+        return -1;
+    }
+
+    if (strcmp(old_room_name, "null") != 0) {
+        // Remove client from participants[server_index] in the old room
+        struct room* old_room = find_room(rooms, old_room_name);
+        if (old_room == NULL) {
+            printf("Error: old %s does not exist", old_room_name);
+            return -1;
+        }
+        ret = remove_client(old_room, client_name, server_index);
+        if (ret < 0) {
+            printf("Error: fail to remove client %s from %s", client_name, old_room_name);
+        } else {
+            printf("Server: remove client %s from %s\n", client_name, old_room_name);
+            if (old_room->participants[my_server_index - 1] != NULL) {
+                // Send new participant list to the server-room group
+                get_participants(to_send, old_room);
+                sprintf(server_room_group, "server%d-%s", my_server_index, old_room_name);
+                ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
+                if (ret < 0) {
+				    SP_error( ret );
+				    Bye();
+			    }
+            }
+        }
+    }
+
+    if (strcmp(new_room_name, "null") != 0) {
+        // Add client to participants[server_index] in the new room
+        struct room* new_room = find_room(rooms, new_room_name);
+        if (new_room == NULL) {
+            new_room = create_room(&rooms, new_room_name);
+        }
+        ret = add_client(new_room, client_name, server_index);
+        if (ret < 0) {
+            printf("Error: fail to add client %s to %s", client_name, new_room_name);
+        } else {
+            printf("Server: add client %s to %s\n", client_name, new_room_name);
+            if (new_room->participants[my_server_index - 1] != NULL) {
+                // Send new participant list to the server-room group
+                get_participants(to_send, new_room);
+                sprintf(server_room_group, "server%d-%s", my_server_index, new_room_name);
+                ret = SP_multicast(Mbox, AGREED_MESS, server_room_group, PARTICIPANTS_ROOM, strlen(to_send), to_send);
+                if (ret < 0) {
+				    SP_error( ret );
+				    Bye();
+			    }
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int execute_history(char *update)
+{
+    int ret;
+    char sender[MAX_GROUP_NAME];
+    char to_send[MAX_MESS_LEN];
+
+    // update = <room_name> <client_name>
+    ret = sscanf(update, "%s %s", room_name, sender);
+    if (ret < 2) {
+        printf("Error: cannot parse room_name and client_name in update %s\n", update);
+        return -1;
+    }
+
+    struct room *room = find_room(rooms, room_name);
+    if (room == NULL) {
+        printf("Error: room %s does not exist\n", room_name);
+        return -1;
+    }
+
+    struct message *cur = room->messages;
+    int num_likes;
+    while (cur != NULL) {
+        // Calculate number of likes
+        num_likes = get_num_likes(cur);
+
+        // Send "HISTORY <creator> <num_likes> <content>" to client's private group
+        sprintf(to_send, "%s %d %s", cur->creator, num_likes, cur->content);
+        ret = SP_multicast(Mbox, AGREED_MESS, sender, HISTORY, strlen(to_send), to_send);
+        if (ret < 0) {
+            SP_error(ret);
+            Bye();
+        }
+        cur = cur->next;
+    }
+
+    return 0;
+
+}
+
+static int execute_buffer(struct log *log)
+{
+    int ret = 0;
+
+    if (log->content[0] == 'j') {
+        // content = j <room_name> <client_name>
+        ret = execute_join(&log->content[2]);
+
+    } else if (log->content[0] == 'R') {
+        // content = R <client_name> <old_room> <new_room> <server_index>
+        ret = execute_roomchange(&log->content[2]);
+
+    } else if (log->content[0] == 'h') {
+        // content = h <room_name> <client_name>
+        ret = execute_history(&log->content[2]);
+
+    } else if (log->content[0] == 'a' || log->content[0] == 'l' || log->content[0] == 'r') {
+        
+        char to_send[MAX_MESS_LEN];
+
+        // content = <update>
+
+        // Increment counter
+        my_counter++;
+
+        // Increment index
+        my_index++;
+
+        // Write the message to log file
+        // Append to logs[my_server_index] list
+        // Update matrix[my_server_index][my_server_index] to new index
+        ret = save_update(my_counter, my_server_index, my_index, log->content, true);
+        if (ret < 0) {
+            printf("Error: fail to save update to file: %d %d %d %s\n",
+                my_counter, my_server_index, my_index, log->content);
+            return -1;
+        }
+
+        // Send “UPDATE_NORMAL <my_counter> <my_server_index> <my_index> <update>” to servers group
+        sprintf(to_send, "%d %d %d %s", my_counter, my_server_index, my_index, log->content);
+        ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_NORMAL, strlen(to_send), to_send);
+        if (ret < 0) {
+            SP_error(ret);
+            Bye();
+        }
+
+    } else {
+        printf("Error: unknown log in buffer %s\n", log->content);
+        return -1;
+    }
+
+    return ret;
 }
 
 
