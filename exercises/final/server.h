@@ -51,7 +51,7 @@ int get_num_likes(struct message *message);
 int add_like(struct message *message, char* username, bool liked, int counter, int server_index);
 void get_messages(char* to_send, struct room* room);
 void get_participants(char* to_send, struct room* room);
-int clear_log(struct log **logs_ref, struct log **last_log_ref, int timestamp);
+int clear_log(struct log **logs_ref, struct log **last_log_ref, int counter);
 void insert_log(struct log **updates_ref, struct log *log);
 
 #endif

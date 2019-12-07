@@ -8,6 +8,7 @@
 #define CONNECTION_TIMEOUT_SEC 5
 #define CONNECTION_TIMEOUT_USEC 0
 #define FREQ_SAVE       10
+#define INIT_SEND_SIZE 10
 
 #define CONNECT 0
 #define JOIN 1
@@ -23,5 +24,6 @@
 #define LIKES 11
 #define VIEW 12
 #define HISTORY 13
+#define START 14
 
 #endif
