@@ -2,7 +2,7 @@
 #define CLIENT_H
 
 struct message {
-    int timestamp;
+    int counter;
     int server_index;
     char creator[80];
     char content[80];

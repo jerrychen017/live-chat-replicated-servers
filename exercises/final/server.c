@@ -978,6 +978,40 @@ static void Read_message()
                 }
                 break;
             }
+
+            case HISTORY:
+            {
+                // message = <room_name>
+                // TODO: if in merging state, put history in buffer
+                struct room *room = find_room(rooms, message);
+                if (room == NULL) {
+                    printf("Error: room does not exist for HISTORY %s\n", message);
+                    break;
+                }
+
+                struct message *cur = room->messages;
+                int num_likes;
+                while (cur != NULL) {
+                    // Calculate number of likes
+                    num_likes = 0;
+                    struct participant *cur_participant = cur->liked_by;
+                    while (cur_participant != NULL) {
+                        num_likes++;
+                        cur_participant = cur_participant->next;
+                    }
+
+                    // Send "HISTORY <creator> <num_likes> <content>" to client's private group
+                    sprintf(to_send, "%s %d %s", cur->creator, num_likes, cur->content);
+                    ret = SP_multicast(Mbox, AGREED_MESS, sender, HISTORY, strlen(to_send), to_send);
+                    if (ret < 0) {
+                        SP_error(ret);
+                        Bye();
+                    }
+                    cur = cur->next;
+                }
+
+                break;
+            }
             
             default:
             {

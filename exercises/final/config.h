@@ -22,5 +22,6 @@
 #define UPDATE_MERGE 10
 #define LIKES 11
 #define VIEW 12
+#define HISTORY 13
 
 #endif

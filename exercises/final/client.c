@@ -272,6 +272,7 @@ static void User_command()
                 }
             }
 
+            // room_name cannot be null
             if (strcmp(room_name, "null") == 0) {
                 printf(" invalid room name, cannot be null\n");
                 break;
@@ -391,15 +392,15 @@ static void User_command()
 				break;
             }
 
-            // Find the message’s lamport timestamp and server index in the messages list
+            // Find the message’s counter and server index in the messages list
             struct message *cur_mess = messages;
             for (int i = 0; i < line_number - 1; i++) {
                 cur_mess = cur_mess->next;
             }
-            int liked_timestamp = cur_mess->timestamp; 
+            int liked_timestamp = cur_mess->counter; 
             int liked_server_index = cur_mess->server_index;
 
-            // Send “UPDATE_CLIENT l <room_name> <timestamp of the liked message> <server_index of the liked message> <username>” to the server’s public group
+            // Send “UPDATE_CLIENT l <room_name> <counter of the liked message> <server_index of the liked message> <username>” to the server’s public group
             sprintf(message, "l %s %d %d %s", room_name, liked_timestamp, liked_server_index, username);
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, strlen(message), message);
             if (ret < 0) {
@@ -437,15 +438,15 @@ static void User_command()
 				break;
             }
 
-            // Find the message’s lamport timestamp and server index in the messages list
+            // Find the message’s counter and server index in the messages list
             struct message *cur_mess = messages;
             for (int i = 0; i < line_number - 1; i++) {
                 cur_mess = cur_mess->next;
             }
-            int unliked_timestamp = cur_mess->timestamp; 
+            int unliked_timestamp = cur_mess->counter; 
             int unliked_server_index = cur_mess->server_index;
 
-            // Send “UPDATE_CLIENT r <room_name> <timestamp of the liked message> <server_index of the liked message> <username>” to the server’s public group
+            // Send “UPDATE_CLIENT r <room_name> <counter of the liked message> <server_index of the liked message> <username>” to the server’s public group
             sprintf(message, "r %s %d %d %s", room_name, unliked_timestamp, unliked_server_index, username);
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, strlen(message), message);
             if (ret < 0) {
@@ -474,8 +475,36 @@ static void User_command()
             }
             
             message[0] = '\0';
-            // Send “VIEW” to the server’s public group
+            // Send "VIEW" to the server’s public group
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, VIEW, strlen(message), message);
+            if (ret < 0) {
+                SP_error(ret);
+                Bye();
+            }
+            break;
+        }
+
+        case 'h':
+        {
+            if (!logged_in) {
+                printf("Client: did not login using command 'u'\n");
+                break;
+            }
+
+            if (!connected) {
+                printf("Client: did not connect with server using command 'c'\n");
+                break;
+            }
+
+            if (!joined) {
+                printf("Client: did not join a room using command 'j'\n");
+                break; 
+            }
+
+            message[0] = '\0';
+            // Send "HISTORY <room_name>" to the server’s public group
+            sprintf(message, "%s", room_name);
+            ret = SP_multicast(Mbox, AGREED_MESS, server_group, HISTORY, strlen(message), message);
             if (ret < 0) {
                 SP_error(ret);
                 Bye();
@@ -553,7 +582,7 @@ static void Read_message()
 
                 char temp[200];
                 temp[0] = '\0';
-                int timestamp;
+                int counter;
                 int message_server_index;
                 char creator[80];
                 int num_likes;
@@ -564,14 +593,14 @@ static void Read_message()
 
                     if (message[i] == '\n') {
                         // append a message
-                        // Each message: <timestamp> <server_index> <creator> <num_likes> <content>
-                        ret = sscanf(temp, "%d %d %s %d %[^\n]\n", &timestamp, &message_server_index, creator, &num_likes, content);
+                        // Each message: <counter> <server_index> <creator> <num_likes> <content>
+                        ret = sscanf(temp, "%d %d %s %d %[^\n]\n", &counter, &message_server_index, creator, &num_likes, content);
                         if (ret < 5) {
                             printf("Error: cannot parse message from MESSAAGES line %s\n", message);
                             continue;
                         }
                         struct message* new_message = malloc(sizeof(struct message));
-                        new_message->timestamp = timestamp;
+                        new_message->counter = counter;
                         new_message->server_index = message_server_index;
                         strcpy(new_message->creator, creator);
                         new_message->num_likes = num_likes;
@@ -641,20 +670,20 @@ static void Read_message()
             case APPEND:
             {
                 printf("Receive APPEND %s\n", message);
-                // message = <timestamp> <server_index> <username> <content>
+                // message = <counter> <server_index> <username> <content>
 
-                int timestamp;
+                int counter;
                 int message_server_index;
                 char creator[80];
                 int num_read;
-                ret = sscanf(message, "%d %d %s%n", &timestamp, &message_server_index, creator, &num_read);
+                ret = sscanf(message, "%d %d %s%n", &counter, &message_server_index, creator, &num_read);
                 if (ret < 3) {
-                    printf("Error: cannot parse timestamp, server_index and username from APPEND %s\n", message);
+                    printf("Error: cannot parse counter, server_index and username from APPEND %s\n", message);
                     break;
                 }
 
                 struct message* new_message = malloc(sizeof(struct message));
-                new_message->timestamp = timestamp;
+                new_message->counter = counter;
                 new_message->server_index = message_server_index;
                 strcpy(new_message->creator, creator);
                 strcpy(new_message->content, &message[num_read + 1]);
@@ -686,20 +715,20 @@ static void Read_message()
 
             case LIKES:
             {
-                // message = <message’s timestamp> <message’s server_index> <num_likes>
-                int timestamp;
+                // message = <message’s counter> <message’s server_index> <num_likes>
+                int counter;
                 int message_server_index;
                 int num_likes;
-                ret = sscanf(message, "%d %d %d", &timestamp, &message_server_index, &num_likes);
+                ret = sscanf(message, "%d %d %d", &counter, &message_server_index, &num_likes);
                 if (ret < 3) {
-                    printf("Error: cannot parse timestamp, server_index and num_likes from LIKES %s\n", message);
+                    printf("Error: cannot parse counter, server_index and num_likes from LIKES %s\n", message);
                     break;
                 }
 
                 // Find the message in list
                 struct message *cur = messages;
                 while (cur != NULL) {
-                    if (cur->timestamp == timestamp && cur->server_index == message_server_index) {
+                    if (cur->counter == counter && cur->server_index == message_server_index) {
                         // Update num_likes for the message
                         cur->num_likes = num_likes;
                         Display();
@@ -726,6 +755,28 @@ static void Read_message()
                     if (connected_servers[i] == 1) {
                         printf("\tserver%d\n", i + 1);
                     }
+                }
+
+                break;
+            }
+
+            case HISTORY:
+            {
+                // message = <creator> <num_likes> <content>
+                char creator[80];
+                int num_likes;
+                int num_read;
+
+                ret = sscanf(message, "%s %d%n", creator, &num_likes, &num_read);
+                if (ret < 2) {
+                    printf("Error: cannot parse creator and num_likes from HISTORY %s\n", message);
+                    break;
+                }
+
+                if (num_likes != 0) {
+                    printf("%s: %-*sLikes: %d\n", creator, 40, &message[num_read + 1], num_likes);
+                } else {
+                    printf("%s: %s\n", creator, &message[num_read + 1]);
                 }
 
                 break;
@@ -880,8 +931,13 @@ static void Display() {
     int line = 1;
     struct message* message_cur = messages;
     while (message_cur != NULL) {
-        printf("%d. %s: %-*sLikes: %d\n",
-            line, message_cur->creator, 40, message_cur->content, message_cur->num_likes);
+        if (message_cur->num_likes != 0) {
+            printf("%d. %s: %-*sLikes: %d\n",
+                line, message_cur->creator, 40, message_cur->content, message_cur->num_likes);
+        } else {
+            printf("%d. %s: %s\n",
+                line, message_cur->creator, message_cur->content);
+        }
         message_cur = message_cur->next;
         line++;
     }
