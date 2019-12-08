@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
         SP_error(ret);
         exit(1);
     }
-    printf("Server: join group %s\n", servers_group);
+    printf("Server: join %s group\n", servers_group);
 
     // Initialize log file names and state file name
     for (int i = 0; i < 5; i++) {
@@ -175,8 +175,8 @@ int main(int argc, char *argv[])
         // If log file exists
         if (access(log_file_names[i], F_OK) != -1 ) {
 
-            printf("Server: read logs from log file %s\n", log_file_names[i]);
-              
+            printf("Server: read logs from %s\n", log_file_names[i]);
+            
             log_fd[i] = fopen(log_file_names[i], "r");
             if(log_fd[i] == NULL) {
                 printf("Error: cannot open log file %s\n", log_file_names[i]);
@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
             // Read logs in file, and put in logs list or updates list
             ret = read_log(i);
             if (ret < 0) {
-                printf("Error: fail to read log from file %s\n", log_file_names[i]);
+                printf("Error: fail to read log from %s\n", log_file_names[i]);
                 // clear log list
                 while (logs[i] != NULL) {
                     struct log *to_delete = logs[i];
@@ -210,7 +210,6 @@ int main(int argc, char *argv[])
 
         printf("Server: execute update from log file: %d %d %d %s\n", updates->counter, updates->server_index, updates->index, updates->content);
 
-        // TODO: move around node instead of free and reallocate
         ret = save_update(updates->counter, updates->server_index, updates->index, updates->content, false);
         if (ret < 0) {
             printf("Error: fail to save update read from file: %d %d %d %s\n", updates->counter, updates->server_index, updates->index, updates->content);
@@ -399,6 +398,8 @@ static void Read_message()
 
             case START:
             {
+                printf("Receive START %s\n", message);
+
                 int alive_servers[5];
                 
                 ret = sscanf(message, "%d %d %d %d %d", 
@@ -488,7 +489,7 @@ static void Read_message()
 
             case PARTICIPANTS_SERVER:
             {
-                printf("Receive PARTICIPANTS_SERVER from server %s\n", sender);
+                printf("Receive PARTICIPANTS_SERVER from %s: %s\n", sender, message);
                 // message = <room_name> <server_index> <client1> <client2> ...
 
                 if (!merging) {
@@ -542,7 +543,7 @@ static void Read_message()
 
             case MATRIX:
             {
-                printf("Receive MATRIX from server %s\n", sender);
+                printf("Receive MATRIX from %s\n", sender);
                 // message = <25 integers>
 
                 if (!merging) {
@@ -576,6 +577,14 @@ static void Read_message()
                 if (counter != 25) {
                     printf("Error: did not receive 25 integers in MATRIX %s\n", message);
                     break;
+                }
+
+                for (i = 0; i < 5; i++) {
+                    printf("\t");
+                    for (int j = 0; j < 5; j++) {
+                        printf("%d ", temp_matrix[i][j]);
+                    }
+                    printf("\n");
                 }
 
                 // Adopt all integers if it is higher, except for line matrix[my_server_index]
@@ -714,7 +723,9 @@ static void Read_message()
                     // if no updates to merge
                     if (num_updates == 0) {
 
-                        printf("Server: matrix = \n");
+                        printf("Server: there is no missing updates to merge\n");
+
+                        printf("Server: my_matrix = \n");
                         for (i = 0; i < 5; i++) {
                             printf("\t");
                             for (int j = 0; j < 5; j++) {
@@ -925,7 +936,7 @@ static void Read_message()
                         // Send one more update to servers group
                         struct log* cur = logs[server_index - 1];
                         while (cur != NULL) {
-                            if (cur->index == index + 1) {
+                            if (cur->index == sent_updates[server_index - 1] + 1) {
                                 // Send “UPDATE_MERGE <counter> <server_index> <index> <update>”
                                 sprintf(to_send, "%d %d %d %s", cur->counter, cur->server_index, cur->index, cur->content);
                                 ret = SP_multicast(Mbox, AGREED_MESS, servers_group, UPDATE_MERGE, strlen(to_send), to_send);
@@ -957,15 +968,6 @@ static void Read_message()
 
                 // if received all missing updates
                 if (num_updates == 0) {
-
-                    printf("Server: matrix = \n");
-                    for (i = 0; i < 5; i++) {
-                        printf("\t");
-                        for (int j = 0; j < 5; j++) {
-                            printf("%d ", matrix[i][j]);
-                        }
-                        printf("\n");
-                    }
                     
                     // execute every update in updates list
                     while(updates != NULL) {
@@ -990,6 +992,15 @@ static void Read_message()
                         struct log* to_delete = updates; 
                         updates = updates->next; 
                         free(to_delete);
+                    }
+
+                    printf("Server: my_matrix = \n");
+                    for (i = 0; i < 5; i++) {
+                        printf("\t");
+                        for (int j = 0; j < 5; j++) {
+                            printf("%d ", matrix[i][j]);
+                        }
+                        printf("\n");
                     }
 
                     // Mark as out of merging state
@@ -1707,7 +1718,7 @@ static int execute_like(int counter, int server_index, char *update)
 
             if (!cur->liked) {
                 cur->liked = true;
-                printf("\t%s likes message %s in %s\n", username, message->content, room_name);
+                printf("\t%s likes message \"%s\" in %s\n", username, message->content, room_name);
                 if (room->participants[my_server_index - 1] != NULL) {
                     int num_likes = get_num_likes(message);
                     // Send “LIKES <message’s counter> <message’s server_index> <num_likes>” to the server-room group
@@ -1734,7 +1745,7 @@ static int execute_like(int counter, int server_index, char *update)
         printf("Error: fail to add like node for update %s\n", update);
         return -1;
     }
-    printf("\tadd like node of %s to message %s in %s\n", username, message->content, room_name);
+    printf("\tadd like node of %s to message \"%s\" in %s\n", username, message->content, room_name);
 
     if (room->participants[my_server_index - 1] != NULL) {
         int num_likes = get_num_likes(message);
@@ -1796,7 +1807,7 @@ static int execute_unlike(int counter, int server_index, char *update)
 
             if (cur->liked) {
                 cur->liked = false;
-                printf("\t%s unlikes message %s in %s\n", username, message->content, room_name);
+                printf("\t%s unlikes message \"%s\" in %s\n", username, message->content, room_name);
                 if (room->participants[my_server_index - 1] != NULL) {
                     int num_likes = get_num_likes(message);
                     // Send “LIKES <message’s counter> <message’s server_index> <num_likes>” to the server-room group
@@ -1823,7 +1834,7 @@ static int execute_unlike(int counter, int server_index, char *update)
         printf("Error: fail to add like node for update %s\n", update);
         return -1;
     }
-    printf("\tadd unlike node of %s to message %s in %s\n", username, message->content, room_name);
+    printf("\tadd unlike node of %s to message \"%s\" in %s\n", username, message->content, room_name);
 
     return 0;
 }
