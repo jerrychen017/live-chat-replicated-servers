@@ -1279,27 +1279,36 @@ static int read_state()
     // Set my counter
     my_counter = counter;
 
-    // Read second line: <5 indices>
-    ret = getline(&line, &length, state_fd);
-    if (ret < 0) {
-        printf("Error: fail to read second line of state file %s\n", state_file_name);
-        free(line);
-        return -1;
+    // Read <matrix>
+    for (int i = 0; i < 5; i++) {
+        ret = getline(&line, &length, state_fd);
+        if (ret < 0) {
+            printf("Error: fail to read matrix[%d] line of state file %s\n", i, state_file_name);
+            free(line);
+            return -1;
+        }
+        ret = sscanf(line, "%d %d %d %d %d", &matrix[i][0], &matrix[i][1],
+            &matrix[i][2], &matrix[i][3], &matrix[i][4]);
+        if (ret < 5) {
+            printf("Error: fail to read 5 lamport counters from first line %s\n", line);
+            free(line);
+            return -1;
+        }
     }
-    ret = sscanf(line, "%d %d %d %d %d", &matrix[my_server_index - 1][0], &matrix[my_server_index - 1][1],
-        &matrix[my_server_index - 1][2], &matrix[my_server_index - 1][3], &matrix[my_server_index - 1][4]);
-    if (ret < 5) {
-        printf("Error: fail to read 5 lamport counters from first line %s\n", line);
-        free(line);
-        return -1;
-    }
-    printf("\tRetrive 5 indices: %d %d %d %d %d\n", matrix[my_server_index - 1][0], matrix[my_server_index - 1][1],
-        matrix[my_server_index - 1][2], matrix[my_server_index - 1][3], matrix[my_server_index - 1][4]);
 
+    printf("\tmy_matrix = \n");
+    for (int i = 0; i < 5; i++) {
+        printf("\t");
+        for (int j = 0; j < 5; j++) {
+            printf("%d ", matrix[i][j]);
+        }
+        printf("\n");
+    }
+    
     // Set my index
     my_index = matrix[my_server_index - 1][my_server_index - 1];
 
-    // Read third line: <number of rooms>
+    // Read line: <number of rooms>
     ret = getline(&line, &length, state_fd);
     if (ret < 0) {
         printf("Error: fail to read second line of state file %s\n", state_file_name);
@@ -1410,23 +1419,30 @@ static int write_state() {
         return -1;
     }
 
-    // Write second line: <5 indices>
+    // Write matrix
     for (int i = 0; i < 5; i++) {
-        ret = fprintf(state_fd, "%d ", matrix[my_server_index - 1][i]);
+        for (int j = 0; j < 5; j++) {
+            ret = fprintf(state_fd, "%d ", matrix[i][j]);
+            if (ret < 0) {
+                printf("Error: fail to write matrix[%d] to state file\n", i);
+                return -1;
+            }
+        }
+        ret = fprintf(state_fd, "\n");
         if (ret < 0) {
-            printf("Error: fail to write 5 counters to state file\n");
+            printf("Error: fail to write new line to state file\n");
             return -1;
         }
     }
 
-    // Write third line: <num_rooms>
+    // Write line: <num_rooms>
     struct room* cur_room = rooms;
     int num_rooms = 0;
     while(cur_room != NULL) {
         num_rooms++;
         cur_room = cur_room->next;
     }
-    ret = fprintf(state_fd, "\n%d\n", num_rooms);
+    ret = fprintf(state_fd, "%d\n", num_rooms);
     if (ret < 0) {
         printf("Error: fail to write num_rooms to state file %s\n", state_file_name);
         return -1;
@@ -1498,6 +1514,13 @@ static int read_log(int i)
     int server_index;
     int index;
     char update[300];
+
+    int lowest_index = matrix[my_server_index - 1][i];
+    for (int j = 0; j < 5; j++) {
+        if (matrix[j][i] < lowest_index) {
+            lowest_index = matrix[j][i];
+        }
+    }
             
     while((ret = getline(&line, &length, log_fd[i])) != -1) {
         // line = <counter> <server_index> <index> <update>
@@ -1510,6 +1533,10 @@ static int read_log(int i)
 
         if (server_index != i + 1) {
             printf("Warning: log file server%d-log%d.out has updates for server%d\n", my_server_index, i + 1, server_index);
+            continue;
+        }
+
+        if (index <= lowest_index) {
             continue;
         }
 
