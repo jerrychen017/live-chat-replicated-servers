@@ -106,6 +106,11 @@ static void User_command()
 				break;
 			}
 
+            if (strlen(username) > 10) {
+                printf(" invalid username, cannot be longer than 10 characters \n");
+                break;
+            }
+
             // username cannot contain hashtag or hyphen
             for (i = 0; i < strlen(username); i++) {
                 if (username[i] == '#' || username[i] == '-') {
@@ -263,6 +268,11 @@ static void User_command()
 				printf(" invalid room name \n");
 				break;
 			}
+
+            if (strlen(room_name) > 23) {
+                printf(" invalid room name, cannot be longer than 23 characters \n");
+                break;
+            }
 
             // room_name cannot contain hashtag or hyphen
             for (i = 0; i < strlen(room_name); i++) {

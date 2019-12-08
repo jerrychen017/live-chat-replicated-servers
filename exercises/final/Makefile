@@ -21,4 +21,3 @@ server.o: server.c config.h server.h
 clean:
 	rm *.o
 	rm server client
-	rm *.out
