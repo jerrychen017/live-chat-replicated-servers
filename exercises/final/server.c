@@ -494,6 +494,7 @@ static void Read_message()
 
                 if (!merging) {
                     printf("Warning: receive PARTICIPANTS_SERVER not in merging state\n");
+                    break;
                 }
 
                 if (!received_start) {
@@ -548,6 +549,7 @@ static void Read_message()
 
                 if (!merging) {
                     printf("Warning: receive MATRIX not in merging state\n");
+                    break;
                 }
 
                 if (!received_start) {
@@ -892,7 +894,8 @@ static void Read_message()
                 // message = <counter> <server_index> <index> <update>
 
                 if (!merging) {
-                    printf("Warning: receive MATRIX not in merging state\n");
+                    printf("Warning: receive UPDATE_MERGE not in merging state\n");
+                    break;
                 }
 
                 if (!received_start) {
@@ -968,6 +971,8 @@ static void Read_message()
 
                 // if received all missing updates
                 if (num_updates == 0) {
+
+                    printf("Server: receive all missing updates\n");
                     
                     // execute every update in updates list
                     while(updates != NULL) {
@@ -1067,7 +1072,7 @@ static void Read_message()
 
                 // update = <room_name> <client_name>
                 char update[300];
-                sprintf(update, "h %s %s", room_name, sender);
+                sprintf(update, "%s %s", room_name, sender);
                 ret = execute_history(update);
                 if (ret < 0) {
                     printf("Error: fail to execute HISTORY %s\n", message);
