@@ -355,6 +355,18 @@ static void User_command()
                 content[strlen(content)-1] = '\0';
             }
 
+            bool allSpace = true;
+            for (int i = 0; i < strlen(content); i++) {
+                if (content[i] != ' ') {
+                    allSpace = false;
+                    break;
+                }
+            }
+            if (allSpace) {
+                printf("Client: message cannot be all whitespace\n");
+                break;
+            }
+
             // Send “UPDATE_CLIENT a <room_name> <username> <content>” to the server’s public group
             sprintf(message, "a %s %s %s", room_name, username, content);
             ret = SP_multicast(Mbox, AGREED_MESS, server_group, UPDATE_CLIENT, strlen(message), message);
@@ -880,7 +892,7 @@ static void Display() {
         return;
     }
 
-    printf("Room: %s\n", room_name);
+    printf("\nRoom: %s\n", room_name);
     printf("Current participants: ");
     struct participant* cur = participants;
     while (cur != NULL) {
