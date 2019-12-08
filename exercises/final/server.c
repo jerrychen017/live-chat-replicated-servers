@@ -40,6 +40,7 @@ static int my_index;
 static int num_updates; // number of updates expected to receive during merging
 static bool received_matrix[5]; // if I have received matrix during merging 
 static bool received_start; // if received start merging signal, to prevent from receiving updates from previous network change
+static int sent_updates[5];
 
 static char log_file_names[5][30];
 
@@ -682,6 +683,9 @@ static void Read_message()
                         }
 
                         // Current server is responsible for sending missing updates for server j + 1
+
+                        sent_updates[j] = lowest_index;
+                        
                         // Send “UPDATE_MERGE <counter> <server_index> <index> <update>” to servers group with logs from lowest to highest index
                         struct log* cur = logs[j];
                         int num_sent = 0;
@@ -696,7 +700,9 @@ static void Read_message()
 				                        Bye();
 			                        }
                                     printf("Server: send log for reconcilation: %d %d %d %s\n", cur->counter, cur->server_index, cur->index, cur->content);
-                                    num_sent++; 
+                                    num_sent++;
+                                    sent_updates[j] = cur->index;
+
                                 } else {
                                     break; 
                                 }
@@ -810,16 +816,17 @@ static void Read_message()
                     break;
                 }
 
-                // If index is out of order, return
-                if (index != matrix[my_server_index - 1][server_index - 1] + 1) {
-                    printf("Server: update is out of order in UPDATE_NORMAL %s\n", message);
-                    break;
-                }
-
                 strcpy(update, &message[num_read + 1]);
 
-                // If the update is not sent by myself, save to file and update matrix, counter, etc
+                // If the update is not sent by myself
                 if (server_index != my_server_index) {
+                    // If index is out of order, return
+                    if (index != matrix[my_server_index - 1][server_index - 1] + 1) {
+                        printf("Server: update is out of order in UPDATE_NORMAL %s\n", message);
+                        break;
+                    }
+
+                    // save to file and update matrix, counter, etc
                     ret = save_update(counter, server_index, index, update, true);
                     if (ret < 0) {
                         printf("Error: fail to save update in UPDATE_NORMAL %s\n", message);
@@ -913,7 +920,7 @@ static void Read_message()
                 if (sender_server_index == my_server_index) {
 
                     // If I have not sent all missing logs
-                    if (index < matrix[my_server_index - 1][server_index - 1]) {
+                    if (sent_updates[server_index - 1] < matrix[my_server_index - 1][server_index - 1]) {
 
                         // Send one more update to servers group
                         struct log* cur = logs[server_index - 1];
@@ -927,6 +934,7 @@ static void Read_message()
 				                    Bye();
 			                    }
                                 printf("Server: send log for reconcilation: %d %d %d %s\n", cur->counter, cur->server_index, cur->index, cur->content);
+                                sent_updates[server_index - 1] = cur->index;
                                 break;
                             }
                             cur = cur->next;
