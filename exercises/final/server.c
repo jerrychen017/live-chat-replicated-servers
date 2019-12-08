@@ -69,8 +69,6 @@ static int execute_roomchange(char *update);
 static int execute_history(char *update);
 static int execute_buffer(struct log *log);
 
-// TODO: make sure one server index is used exactly once
-
 int main(int argc, char *argv[])
 {
     rooms = NULL;
@@ -264,10 +262,6 @@ static void Read_message()
     char	 sender[MAX_GROUP_NAME];
     char	 target_groups[MAX_MEMBERS][MAX_GROUP_NAME];
     membership_info  memb_info;
-    vs_set_info      vssets[MAX_VSSETS];
-    unsigned int     my_vsset_index;
-    int      num_vs_sets;
-    char     members[MAX_MEMBERS][MAX_GROUP_NAME];
     int		 num_groups;
     int		 service_type;
     int16	 mess_type;
@@ -680,6 +674,16 @@ static void Read_message()
                                     lowest_index = matrix[i][j];
                                 }
                             } 
+                        }
+
+                        /* Find the server which has the highest index, and lowest server index
+                             to send missing updates for this server */
+                        for (i = 0; i < 5; i++) {
+                            if (connected_servers[i]) {
+                                if (matrix[i][j] == highest_index && i + 1 < server_index) {
+                                    server_index = i + 1;
+                                }
+                            }
                         }
                         
                         // Calculate num_updates expected to receive
@@ -1101,12 +1105,7 @@ static void Read_message()
         }
 
         if (Is_reg_memb_mess(service_type)) {
-            printf("Received REGULAR membership for group %s with %d members, where I am member %d:\n",
-				sender, num_groups, mess_type );
-            for( i=0; i < num_groups; i++ ) {
-                printf("\t%s\n", &target_groups[i][0] );
-            }
-
+            
             // Membership change in server-client group
             if (sscanf(sender, "server%*d-%[^-]-ugrad%d", username, &ugrad_index) == 2) {
                 if (Is_caused_join_mess(service_type)) {
@@ -1143,7 +1142,7 @@ static void Read_message()
             // Membership change in servers group
             } else if (strcmp(sender, "servers") == 0) {
 
-                printf("Server: network changes. Start merging.\n");
+                printf("Server: NETWORK CHANGES. Start merging.\n");
 
                 /* TODO: If there is a server with the same server index
                         Print error messages that server index needs to be unique
@@ -1192,38 +1191,6 @@ static void Read_message()
                 
             }
 
-
-		    if (Is_caused_join_mess(service_type)) {
-			    printf("Due to the JOIN of %s\n", memb_info.changed_member );
-		    } else if (Is_caused_leave_mess(service_type)) {
-			    printf("Due to the LEAVE of %s\n", memb_info.changed_member );
-		    } else if (Is_caused_disconnect_mess(service_type)) {
-			    printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
-		    } else if (Is_caused_network_mess(service_type)) {
-			    printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
-                num_vs_sets = SP_get_vs_sets_info( message, &vssets[0], MAX_VSSETS, &my_vsset_index );
-                if (num_vs_sets < 0) {
-                    printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
-                    SP_error( num_vs_sets );
-                    exit( 1 );
-                }
-
-                for (i = 0; i < num_vs_sets; i++) {
-                    printf("%s VS set %d has %u members:\n",
-                        (i  == my_vsset_index) ?
-                        ("LOCAL") : ("OTHER"), i, vssets[i].num_members );
-            
-                    ret = SP_get_vs_set_members(message, &vssets[i], members, MAX_MEMBERS);
-                    if (ret < 0) {
-                        printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
-                        SP_error( ret );
-                        exit( 1 );
-                    }
-                    for (j = 0; j < vssets[i].num_members; j++) {
-                        printf("\t%s\n", members[j] );
-                    }
-			    }
-		    } 
         } else if (Is_caused_leave_mess(service_type)) {
 			
             printf("Server: leave group %s\n", sender );
