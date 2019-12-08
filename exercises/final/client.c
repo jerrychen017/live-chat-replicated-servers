@@ -338,7 +338,7 @@ static void User_command()
                 break; 
             }
 
-            if (strlen(&command[2]) == 0 || (strlen(&command[2]) == 1 && content[2] == '\n')) {
+            if (strlen(&command[2]) == 0 || (strlen(&command[2]) == 1 && command[2] == '\n')) {
                 printf("Client: message cannot be empty");
                 break;
             }
@@ -531,22 +531,17 @@ static void Read_message()
     char	 sender[MAX_GROUP_NAME];
     char	 target_groups[MAX_MEMBERS][MAX_GROUP_NAME];
     membership_info  memb_info;
-    vs_set_info      vssets[MAX_VSSETS];
-    unsigned int     my_vsset_index;
-    int      num_vs_sets;
-    char     members[MAX_MEMBERS][MAX_GROUP_NAME];
     int		 num_groups;
     int		 service_type;
     int16	 mess_type;
     int		 endian_mismatch;
-    int		 i,j;
+    int		 i;
     int		 ret;
 
     service_type = 0;
 
     ret = SP_receive( Mbox, &service_type, sender, 100, &num_groups, target_groups, 
         &mess_type, &endian_mismatch, sizeof(message), message );
-	printf("\n============================\n");
 
     if (ret < 0) {
 	    if (!To_exit) {
@@ -571,7 +566,7 @@ static void Read_message()
         switch (mess_type) {
             case MESSAGES:
             {
-                printf("Receive MESSAGES %s\n", message);
+                //printf("Receive MESSAGES %s\n", message);
                 // clear messages list
                 while (messages != NULL) {
                     struct message* to_delete = messages;
@@ -669,7 +664,7 @@ static void Read_message()
 
             case APPEND:
             {
-                printf("Receive APPEND %s\n", message);
+                // printf("Receive APPEND %s\n", message);
                 // message = <counter> <server_index> <username> <content>
 
                 int counter;
@@ -799,12 +794,7 @@ static void Read_message()
         }
 
         if (Is_reg_memb_mess(service_type)) {
-            printf("Received REGULAR membership for group %s with %d members, where I am member %d:\n",
-				sender, num_groups, mess_type );
-            for( i=0; i < num_groups; i++ ) {
-                printf("\t%s\n", &target_groups[i][0] );
-            }
-
+            
             // ** server-client group **
             if (strcmp(sender, server_client_group) == 0) {
                 if (Is_caused_join_mess(service_type)) {
@@ -865,35 +855,6 @@ static void Read_message()
 
             printf("\n============================\n");
 
-		    if (Is_caused_join_mess(service_type)) {
-			    printf("Due to the JOIN of %s\n", memb_info.changed_member );
-		    } else if (Is_caused_leave_mess(service_type)) {
-			    printf("Due to the LEAVE of %s\n", memb_info.changed_member );
-		    } else if (Is_caused_disconnect_mess(service_type)) {
-			    printf("Due to the DISCONNECT of %s\n", memb_info.changed_member );
-		    } else if (Is_caused_network_mess(service_type)) {
-			    printf("Due to NETWORK change with %u VS sets\n", memb_info.num_vs_sets);
-                num_vs_sets = SP_get_vs_sets_info( message, &vssets[0], MAX_VSSETS, &my_vsset_index );
-                if (num_vs_sets < 0) {
-                    printf("BUG: membership message has more then %d vs sets. Recompile with larger MAX_VSSETS\n", MAX_VSSETS);
-                    SP_error( num_vs_sets );
-                    exit( 1 );
-                }
-                for (i = 0; i < num_vs_sets; i++) {
-                    printf("%s VS set %d has %u members:\n",
-                        (i  == my_vsset_index) ?
-                        ("LOCAL") : ("OTHER"), i, vssets[i].num_members );
-                    ret = SP_get_vs_set_members(message, &vssets[i], members, MAX_MEMBERS);
-                    if (ret < 0) {
-                        printf("VS Set has more then %d members. Recompile with larger MAX_MEMBERS\n", MAX_MEMBERS);
-                        SP_error( ret );
-                        exit( 1 );
-                    }
-                    for (j = 0; j < vssets[i].num_members; j++) {
-                        printf("\t%s\n", members[j] );
-                    }
-			    }
-		    } 
         } else if (Is_caused_leave_mess(service_type)) {
 
 			printf("Client: leave group %s\n", sender);
